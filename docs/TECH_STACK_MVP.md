@@ -9,7 +9,7 @@ This document supersedes paid production recommendations for the MVP phase. Prod
 
 | Layer | MVP selection | Cost target |
 | --- | --- | --- |
-| Language/runtime | TypeScript on Node.js 22 LTS | Free/open source |
+| Language/runtime | TypeScript on Node.js 24 LTS | Free/open source |
 | Framework | NestJS | Free/open source |
 | Application hosting | Railway API and worker services | Free/trial for early work; Hobby for complete sandbox |
 | Database | Railway PostgreSQL | Included project service; sandbox only |
@@ -188,7 +188,7 @@ Coinbase public market data normally does not require a trading account. Review 
 ## Local Development
 
 ```text
-Node.js 22 LTS
+Node.js 24 LTS
 npm
 Docker Desktop and Compose
 local PostgreSQL container

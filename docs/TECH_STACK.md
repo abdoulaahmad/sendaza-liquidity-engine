@@ -6,7 +6,7 @@
 
 | Layer | Technology | Purpose |
 | --- | --- | --- |
-| Runtime | Node.js 22 LTS | Supported server runtime |
+| Runtime | Node.js 24 LTS | Supported server runtime |
 | Language | TypeScript strict mode | Shared engineering model with Sendaza |
 | Framework | NestJS 11 | Modular API and workers |
 | Database | PostgreSQL 16+ | Orders, inventory, idempotency, outbox, audit, reconciliation |
@@ -106,7 +106,7 @@ Workers use database leasing and locking to prevent concurrent duplicate executi
 Required local tools:
 
 ```text
-Node.js 22 LTS
+Node.js 24 LTS
 npm
 Docker Desktop with Compose
 PostgreSQL client

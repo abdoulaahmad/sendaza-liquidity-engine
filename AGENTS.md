@@ -122,7 +122,7 @@ Use one `pnpm-lock.yaml` and one `pnpm-workspace.yaml`. Do not add
 
 ## Toolchain
 
-- Node.js 22 LTS
+- Node.js 24 LTS
 - pnpm with a repository-pinned version
 - TypeScript strict mode
 - NestJS

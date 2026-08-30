@@ -17,6 +17,23 @@ enum AssetKind {
   TOKEN
 }
 
+enum CredentialStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum IdempotencyStatus {
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum OutboxStatus {
+  PENDING
+  LEASED
+  DELIVERED
+  QUARANTINED
+}
+
 model Asset {
   id              String          @id @default(uuid()) @db.Uuid
   symbol          String          @unique @db.VarChar(20)
@@ -131,4 +148,92 @@ model ConfigurationAuditLog {
 
   @@index([resourceType, resourceId, createdAt])
   @@map("configuration_audit_logs")
+}
+
+model ServiceCredential {
+  id         String                @id @default(uuid()) @db.Uuid
+  clientId   String                @map("client_id") @db.VarChar(100)
+  keyId      String                @unique @map("key_id") @db.VarChar(100)
+  status     CredentialStatus      @default(ACTIVE)
+  validFrom  DateTime              @map("valid_from") @db.Timestamptz(6)
+  validUntil DateTime?             @map("valid_until") @db.Timestamptz(6)
+  revokedAt  DateTime?             @map("revoked_at") @db.Timestamptz(6)
+  createdAt  DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  nonces     AuthenticationNonce[]
+
+  @@index([clientId, status])
+  @@map("service_credentials")
+}
+
+model AuthenticationNonce {
+  id           String            @id @default(uuid()) @db.Uuid
+  credentialId String            @map("credential_id") @db.Uuid
+  credential   ServiceCredential @relation(fields: [credentialId], references: [id], onDelete: Restrict)
+  nonceHash    String            @map("nonce_hash") @db.Char(64)
+  expiresAt    DateTime          @map("expires_at") @db.Timestamptz(6)
+  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([credentialId, nonceHash])
+  @@index([expiresAt])
+  @@map("authentication_nonces")
+}
+
+model IdempotencyRecord {
+  id             String            @id @default(uuid()) @db.Uuid
+  clientId       String            @map("client_id") @db.VarChar(100)
+  operation      String            @db.VarChar(100)
+  idempotencyKey String            @map("idempotency_key") @db.VarChar(200)
+  requestHash    String            @map("request_hash") @db.Char(64)
+  status         IdempotencyStatus @default(IN_PROGRESS)
+  responseCode   Int?              @map("response_code")
+  responseBody   Json?             @map("response_body")
+  correlationId  String            @map("correlation_id") @db.Uuid
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  completedAt    DateTime?         @map("completed_at") @db.Timestamptz(6)
+  updatedAt      DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([clientId, operation, idempotencyKey])
+  @@index([status, createdAt])
+  @@map("idempotency_records")
+}
+
+model OutboxEvent {
+  id             String       @id @default(uuid()) @db.Uuid
+  aggregateType  String       @map("aggregate_type") @db.VarChar(100)
+  aggregateId    String       @map("aggregate_id") @db.VarChar(100)
+  eventType      String       @map("event_type") @db.VarChar(150)
+  payload        Json
+  correlationId  String       @map("correlation_id") @db.Uuid
+  status         OutboxStatus @default(PENDING)
+  attemptCount   Int          @default(0) @map("attempt_count")
+  maxAttempts    Int          @default(10) @map("max_attempts")
+  nextAttemptAt  DateTime     @default(now()) @map("next_attempt_at") @db.Timestamptz(6)
+  leaseToken     String?      @map("lease_token") @db.Uuid
+  leaseExpiresAt DateTime?    @map("lease_expires_at") @db.Timestamptz(6)
+  deliveredAt    DateTime?    @map("delivered_at") @db.Timestamptz(6)
+  quarantinedAt  DateTime?    @map("quarantined_at") @db.Timestamptz(6)
+  lastErrorCode  String?      @map("last_error_code") @db.VarChar(100)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([status, nextAttemptAt])
+  @@index([leaseExpiresAt])
+  @@map("outbox_events")
+}
+
+model AuditLog {
+  id            String   @id @default(uuid()) @db.Uuid
+  actorType     String   @map("actor_type") @db.VarChar(50)
+  actorId       String   @map("actor_id") @db.VarChar(100)
+  correlationId String   @map("correlation_id") @db.Uuid
+  action        String   @db.VarChar(100)
+  resourceType  String   @map("resource_type") @db.VarChar(100)
+  resourceId    String?  @map("resource_id") @db.VarChar(100)
+  metadata      Json?
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([correlationId])
+  @@index([resourceType, resourceId, createdAt])
+  @@map("audit_logs")
 }

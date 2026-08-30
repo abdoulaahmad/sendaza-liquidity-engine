@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>SLE - Sendaza Integration Proposal</title>
+  <style>
+    @page { size: A4; margin: 18mm 17mm 18mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #17212b; font-family: Arial, Helvetica, sans-serif; font-size: 10.5pt; line-height: 1.48; }
+    h1, h2, h3 { color: #0b3b4a; page-break-after: avoid; }
+    h1 { margin: 0 0 10px; font-size: 28pt; line-height: 1.08; }
+    h2 { margin: 24px 0 9px; padding-bottom: 5px; border-bottom: 2px solid #17a398; font-size: 17pt; }
+    h3 { margin: 16px 0 6px; font-size: 12.5pt; }
+    p { margin: 6px 0 10px; }
+    ul, ol { margin: 6px 0 12px; padding-left: 22px; }
+    li { margin: 3px 0; }
+    table { width: 100%; border-collapse: collapse; margin: 10px 0 16px; page-break-inside: avoid; }
+    th { background: #0b3b4a; color: white; text-align: left; }
+    th, td { border: 1px solid #cbd5da; padding: 7px 8px; vertical-align: top; }
+    tr:nth-child(even) td { background: #f3f7f7; }
+    .cover { min-height: 245mm; display: flex; flex-direction: column; justify-content: space-between; page-break-after: always; }
+    .cover-top { border-top: 10px solid #17a398; padding-top: 30mm; }
+    .eyebrow { color: #137d78; font-weight: bold; font-size: 11pt; text-transform: uppercase; }
+    .subtitle { max-width: 150mm; color: #42545e; font-size: 15pt; }
+    .meta { border-left: 4px solid #17a398; padding-left: 12px; color: #42545e; }
+    .summary { margin: 16px 0; padding: 14px 16px; background: #eaf6f4; border-left: 5px solid #17a398; }
+    .flow { margin: 10px 0 16px; padding: 12px 14px; background: #f4f6f7; border: 1px solid #d6dfe2; font-family: Consolas, monospace; font-size: 9.5pt; white-space: pre-line; }
+    .decision { border-left: 4px solid #d89b25; padding: 8px 12px; background: #fff8e9; }
+    .badge { display: inline-block; padding: 2px 7px; color: white; background: #137d78; font-size: 8.5pt; font-weight: bold; }
+    .page-break { page-break-before: always; }
+    .small { color: #5b6870; font-size: 9pt; }
+    .signoff td { height: 34px; }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <div class="cover-top">
+      <div class="eyebrow">Integration Proposal</div>
+      <h1>Sendaza Liquidity Engine</h1>
+      <p class="subtitle">Multi-asset purchase pricing, MPC-secured treasury custody, and external blockchain withdrawals for Sendaza.</p>
+    </div>
+    <div class="meta">
+      <p><strong>Prepared for:</strong> Sendaza</p>
+      <p><strong>Initial environment:</strong> Sandbox with configuration-driven assets, fiat currencies, and networks</p>
+      <p><strong>Custody:</strong> Fireblocks Developer Sandbox using MPC</p>
+      <p><strong>Status:</strong> Design approval and integration planning</p>
+      <p><strong>Date:</strong> 29 August 2026</p>
+    </div>
+  </section>
+
+  <h2>1. Executive Summary</h2>
+  <div class="summary"><strong>Sendaza manages what customers own. SLE prices, reserves, safeguards, and delivers the crypto that backs that ownership.</strong></div>
+  <p>The Sendaza Liquidity Engine (SLE) is a private service that enables Sendaza customers to purchase configured crypto assets using configured fiat balances and withdraw supported assets over approved blockchain networks.</p>
+  <p>Sendaza remains the customer and accounting system of record. It owns authentication, KYC, transaction authorization, balance locking, and double-entry ledger entries. SLE owns market-data conversion, executable quotes, spreads, purchase fees, treasury availability, inventory reservations, MPC custody integration, blockchain execution, confirmation monitoring, and treasury reconciliation.</p>
+  <p>The first deliverable serves Sendaza only and runs with test balances, testnet assets, and a Fireblocks Developer Sandbox. External client onboarding and public partner APIs are deferred. The sandbox is not approved for mainnet or real customer funds.</p>
+
+  <h2>2. Business Deliverable</h2>
+  <p>The sandbox MVP will demonstrate one complete configured crypto/fiat journey:</p>
+  <ul>
+    <li>Request a short-lived executable quote for an enabled crypto/fiat market.</li>
+    <li>Purchase the quoted crypto asset using fiat locked in Sendaza.</li>
+    <li>Record the customer's crypto ownership in the Sendaza ledger.</li>
+    <li>Reserve matching asset-network inventory from the SLE treasury.</li>
+    <li>Withdraw the asset to a verified address on an enabled network.</li>
+    <li>Sign and broadcast the withdrawal through Fireblocks MPC custody.</li>
+    <li>Reconcile Sendaza, SLE, Fireblocks, and blockchain records.</li>
+  </ul>
+  <p><span class="badge">OUT OF SCOPE</span> Customer crypto deposits, crypto selling, swaps, staking, lending, automated treasury trading, and mainnet operation.</p>
+
+  <h2>3. Ownership Boundary</h2>
+  <table>
+    <thead><tr><th>Sendaza owns</th><th>SLE owns</th></tr></thead>
+    <tbody>
+      <tr><td>Customer accounts, authentication, KYC, and transaction PIN</td><td>Executable crypto quotes and market configuration</td></tr>
+      <tr><td>Fiat funding and customer balances</td><td>Market-data conversion, spreads, purchase fees, and executable quotes</td></tr>
+      <tr><td>Display of SLE quote economics without recalculation</td><td>Treasury holdings, reservations, and sellable inventory</td></tr>
+      <tr><td>Available and locked balance accounting</td><td>Fireblocks MPC custody integration</td></tr>
+      <tr><td>Double-entry ledger and transaction history</td><td>External withdrawal submission and lifecycle</td></tr>
+      <tr><td>Customer-facing mobile and administrative interfaces</td><td>Blockchain confirmation and replacement tracking</td></tr>
+      <tr><td>Customer authorization and eligibility decisions</td><td>Treasury-to-liability reconciliation evidence</td></tr>
+    </tbody>
+  </table>
+  <div class="decision"><strong>Non-negotiable boundary:</strong> SLE cannot write Sendaza customer balances, and Sendaza cannot access treasury signing keys.</div>
+
+  <h2>4. Purchase Flow</h2>
+  <div class="flow">Customer selects an enabled crypto/fiat market and enters a fiat amount
+→ Sendaza checks eligibility
+→ Sendaza requests an executable quote from SLE
+→ SLE evaluates the configured conversion route, spread, fees, limits, and sellable inventory
+→ Customer confirms before quote expiry
+→ Sendaza locks the exact fiat debit
+→ SLE reserves the quoted crypto amount on its configured backing network
+→ Sendaza posts balanced fiat and crypto ledger entries
+→ Sendaza acknowledges settlement to SLE
+→ Both systems mark the purchase complete</div>
+  <p>No blockchain transaction occurs during a purchase. The asset remains in the controlled treasury; the Sendaza ledger records customer ownership, and SLE reduces unallocated inventory by the same amount.</p>
+
+  <h3>Pricing engine</h3>
+  <p>SLE owns the complete, immutable quote calculation. Pricing routes are configuration-driven rather than hardcoded to ETH or NGN. Examples include <code>BTC/USDT × USDT/USD × USD/NGN</code>, <code>SOL/USD × USD/GHS</code>, or a reliable direct market. SLE stores every source rate, timestamp, conversion step, spread, fee, configuration version, and final customer amount. Sendaza displays the result and must not recalculate it.</p>
+
+  <h2>5. Withdrawal Flow</h2>
+  <div class="flow">Customer enters amount and Ethereum address
+→ SLE validates the destination and estimates fees
+→ Customer confirms the total debit
+→ Sendaza locks the withdrawal asset and applicable fees
+→ SLE evaluates limits, risk, treasury, and gas
+→ SLE submits one transfer instruction to Fireblocks
+→ Fireblocks policy approves automatically or requests review
+→ Fireblocks MPC signs and broadcasts
+→ SLE verifies the transaction through Alchemy
+→ Sendaza finalizes the ledger deduction after required confirmations</div>
+  <p>A submission timeout is not treated as a failure. Funds remain locked while SLE resolves the provider transfer using the original unique reference.</p>
+
+  <h2 class="page-break">6. MPC Custody Model</h2>
+  <p>Fireblocks creates and protects the treasury wallet using multi-party computation. SLE never receives or reconstructs the wallet's private key. SLE sends authenticated transfer instructions and receives provider transfer IDs and blockchain transaction hashes.</p>
+  <table>
+    <thead><tr><th>SLE stores</th><th>SLE never stores</th></tr></thead>
+    <tbody>
+      <tr><td>Fireblocks vault/wallet identifier</td><td>Treasury private key</td></tr>
+      <tr><td>Public Ethereum address</td><td>Seed phrase or exportable signing material</td></tr>
+      <tr><td>Provider transfer identifier</td><td>Customer-facing custody credentials</td></tr>
+      <tr><td>Transaction hashes and status evidence</td><td>Secrets in source code, logs, or PostgreSQL</td></tr>
+    </tbody>
+  </table>
+  <p>Fireblocks API authentication credentials are held in encrypted deployment secrets. These credentials allow SLE to request operations but are not the treasury wallet key.</p>
+  <h3>Approval policy</h3>
+  <ul>
+    <li>Low-risk withdrawals within approved limits may be processed automatically.</li>
+    <li>High-value, unusual, or elevated-risk withdrawals require manual review or multiple approvals.</li>
+    <li>Blocked destinations, insufficient treasury, invalid locks, or unavailable required screening stop the withdrawal.</li>
+    <li>Fireblocks policies independently restrict source wallets, assets, networks, destinations, and amounts.</li>
+  </ul>
+
+  <h2>7. Sendaza Changes Required</h2>
+  <ol>
+    <li><strong>Asset precision:</strong> support each configured fiat and crypto precision using atomic units or an approved exact representation.</li>
+    <li><strong>Asset model:</strong> distinguish asset from network. For example, USDT on Ethereum, Tron, Solana, and Polygon are separate treasury and withdrawal routes.</li>
+    <li><strong>Ledger locking:</strong> represent available-to-locked movements with balanced, immutable journals.</li>
+    <li><strong>Settlement protocol:</strong> support durable lock, settle, release, and reconciliation states.</li>
+    <li><strong>SLE client module:</strong> sign authenticated requests and attach idempotency and correlation identifiers.</li>
+    <li><strong>Inbound events:</strong> verify SLE webhook signatures, timestamps, and replay identifiers before processing.</li>
+    <li><strong>Durable messaging:</strong> write financial state and outbound acknowledgements into a transactional outbox.</li>
+    <li><strong>Operation records:</strong> retain SLE order ID, client reference, lock reference, settlement reference, and transaction hashes.</li>
+    <li><strong>Liability reporting:</strong> submit ledger-derived, cutoff-aligned liability snapshots for every supported asset.</li>
+    <li><strong>Provider separation:</strong> remove direct crypto pricing, signing, and broadcasting from Sendaza once SLE is integrated.</li>
+  </ol>
+  <p>Customer ownership may be displayed as USDT, but SLE tracks available
+  inventory, token contracts, provider wallets, fees, and limits separately for
+  every supported network. Inventory on one chain cannot fund a withdrawal on
+  another chain until a confirmed rebalancing operation has completed.</p>
+
+  <h2>8. Integration Contract</h2>
+  <table>
+    <thead><tr><th>Operation</th><th>Endpoint</th></tr></thead>
+    <tbody>
+      <tr><td>Create purchase quote</td><td><code>POST /api/v1/quotes</code></td></tr>
+      <tr><td>Reserve quoted inventory</td><td><code>POST /api/v1/purchases</code></td></tr>
+      <tr><td>Acknowledge ledger settlement</td><td><code>POST /api/v1/purchases/:id/settlement</code></td></tr>
+      <tr><td>Retrieve purchase status</td><td><code>GET /api/v1/purchases/:id</code></td></tr>
+      <tr><td>Create withdrawal fee quote</td><td><code>POST /api/v1/withdrawal-fee-quotes</code></td></tr>
+      <tr><td>Submit approved withdrawal</td><td><code>POST /api/v1/withdrawals</code></td></tr>
+      <tr><td>Retrieve withdrawal status</td><td><code>GET /api/v1/withdrawals/:id</code></td></tr>
+      <tr><td>Report customer liabilities</td><td><code>POST /api/v1/reconciliation/liability-snapshots</code></td></tr>
+      <tr><td>Receive lifecycle events</td><td>Registered Sendaza webhook endpoint</td></tr>
+    </tbody>
+  </table>
+  <p>All mutations require an idempotency key and correlation ID. Monetary values cross APIs as decimal strings. The MVP accepts only authenticated Sendaza credentials; external client onboarding is deferred.</p>
+
+  <h2>9. Failure and Safety Rules</h2>
+  <ul>
+    <li>A quote is not a purchase and does not reserve treasury inventory.</li>
+    <li>A duplicate request cannot reserve or withdraw funds twice.</li>
+    <li>An expired quote cannot be accepted.</li>
+    <li>A provider timeout after submission does not prove failure.</li>
+    <li>A broadcast transaction is not considered confirmed.</li>
+    <li>Funds may be automatically released only after proven failure before broadcast.</li>
+    <li>Uncertain results remain locked and enter reconciliation.</li>
+    <li>Completed financial records remain immutable; corrections use compensating records.</li>
+  </ul>
+
+  <h2 class="page-break">10. Delivery Plan</h2>
+  <table>
+    <thead><tr><th>Phase</th><th>Deliverable</th><th>Exit condition</th></tr></thead>
+    <tbody>
+      <tr><td>1. Foundation</td><td>SLE service, PostgreSQL schema, client authentication, exact amounts, idempotency, audit log, and outbox</td><td>Concurrent and duplicate requests preserve financial invariants</td></tr>
+      <tr><td>2. Purchase</td><td>Configurable pricing routes, spreads, fees, treasury snapshots, reservations, and Sendaza settlement handshake</td><td>Sandbox purchase completes and reconciles without overselling</td></tr>
+      <tr><td>3. Withdrawal</td><td>Asset-network fee snapshots, Fireblocks adapter, provider webhooks, polling, and testnet finality</td><td>A testnet asset reaches an external address exactly once</td></tr>
+      <tr><td>4. Integration</td><td>Sendaza ledger changes, SLE client, lifecycle events, and liability snapshots</td><td>End-to-end purchase and withdrawal survive retries and restarts</td></tr>
+      <tr><td>5. Hardening</td><td>Reconciliation, security testing, incident exercises, and controlled pilot</td><td>No unexplained variance or unresolved critical/high finding</td></tr>
+    </tbody>
+  </table>
+
+  <h2>11. Decisions Required From Sendaza</h2>
+  <ul>
+    <li>Approve the Sendaza/SLE ownership boundary.</li>
+    <li>Approve the asset registry, precision rules, and ledger-account migration.</li>
+    <li>Approve journal-backed locking, settlement, and reversal behavior.</li>
+    <li>Decide purchase spread and explicit fee presentation.</li>
+    <li>Decide withdrawal network-fee treatment and variance ownership.</li>
+    <li>Approve automatic withdrawal limits and manual-review thresholds.</li>
+    <li>Approve confirmation requirements by transaction value.</li>
+    <li>Approve the liability snapshot definition and reporting cadence.</li>
+    <li>Nominate engineering, treasury, compliance, and operations owners.</li>
+  </ul>
+
+  <h2>12. Acceptance Criteria</h2>
+  <p>The sandbox integration is accepted when:</p>
+  <ul>
+    <li>A test customer buys a configured crypto asset using locked test fiat.</li>
+    <li>Sendaza records exact, balanced, immutable ledger entries.</li>
+    <li>SLE reserves sufficient asset-network inventory without overselling the treasury.</li>
+    <li>The customer withdraws a supported testnet asset through Fireblocks MPC custody.</li>
+    <li>Sendaza finalizes the deduction only after required confirmations.</li>
+    <li>Duplicate, timeout, delayed-webhook, and restart tests do not duplicate or lose value.</li>
+    <li>Sendaza, SLE, Fireblocks, and blockchain evidence reconcile at a common cutoff.</li>
+  </ul>
+
+  <h2>13. Approval Record</h2>
+  <table class="signoff">
+    <thead><tr><th>Area</th><th>Owner</th><th>Decision / date</th></tr></thead>
+    <tbody>
+      <tr><td>Product and scope</td><td></td><td></td></tr>
+      <tr><td>Engineering architecture</td><td></td><td></td></tr>
+      <tr><td>Ledger and finance</td><td></td><td></td></tr>
+      <tr><td>Custody and treasury</td><td></td><td></td></tr>
+      <tr><td>Compliance and legal</td><td></td><td></td></tr>
+      <tr><td>Security and operations</td><td></td><td></td></tr>
+    </tbody>
+  </table>
+  <p class="small">Supporting design documents: PRD, Architecture, API Specification, Ledger Integration, Security and Operations, Technology Stack MVP, and Roadmap.</p>
+</body>
+</html>

@@ -1,1 +1,1 @@
-export const CONFIGURATION_PACKAGE = '@sle/configuration';
+export * from './credential-secret.provider';

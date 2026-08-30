@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AssetView, MarketView } from './registry.types';
+import { assertRegistryIntegrity } from './registry.validation';
 
 export abstract class RegistryRepository {
   abstract listAssets(): readonly AssetView[];
@@ -8,6 +9,11 @@ export abstract class RegistryRepository {
 
 @Injectable()
 export class SeededRegistryRepository extends RegistryRepository {
+  constructor() {
+    super();
+    assertRegistryIntegrity(ASSETS, MARKETS);
+  }
+
   listAssets(): readonly AssetView[] {
     return ASSETS;
   }

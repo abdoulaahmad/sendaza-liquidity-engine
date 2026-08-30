@@ -12,8 +12,10 @@ Every sprint has a GitHub milestone, a vertical outcome, stories meeting the
 Definition of Ready, focused pull requests, an integrated demonstration, and an
 explicit gate. Implementation, tests, telemetry, and documentation ship together.
 
-Contribution volume is not an acceptance criterion. Issues, commits, pull
-requests, and reviews must represent real project work.
+Each sprint targets at least 30 meaningful GitHub contributions across scoped
+commits, issues, pull requests, reviews, and documented decisions. Contribution
+volume does not replace the sprint gate, and empty commits or artificial file
+churn are prohibited.
 
 ## Sprint 0: Repository and Delivery Foundation
 

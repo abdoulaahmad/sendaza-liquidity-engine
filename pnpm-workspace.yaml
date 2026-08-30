@@ -3,4 +3,9 @@ packages:
   - 'packages/*'
 allowBuilds:
   '@parcel/watcher': false
+  '@prisma/engines': true
+  esbuild: false
+  msgpackr-extract: false
+  prisma: true
   unrs-resolver: false
+  workerd: false

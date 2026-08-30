@@ -1,1 +1,3 @@
-export const DATABASE_PACKAGE = '@sle/database';
+export * from './prisma-registry.repository';
+export * from './prisma.service';
+export * from './database.module';

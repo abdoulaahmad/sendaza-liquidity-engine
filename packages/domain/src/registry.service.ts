@@ -6,11 +6,11 @@ import { AssetView, MarketView } from './registry.types';
 export class RegistryService {
   constructor(private readonly repository: RegistryRepository) {}
 
-  listAssets(): readonly AssetView[] {
+  async listAssets(): Promise<readonly AssetView[]> {
     return this.repository.listAssets();
   }
 
-  listMarkets(): readonly MarketView[] {
+  async listMarkets(): Promise<readonly MarketView[]> {
     return this.repository.listMarkets();
   }
 }

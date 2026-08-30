@@ -3,8 +3,8 @@ import { AssetView, MarketView } from './registry.types';
 import { assertRegistryIntegrity } from './registry.validation';
 
 export abstract class RegistryRepository {
-  abstract listAssets(): readonly AssetView[];
-  abstract listMarkets(): readonly MarketView[];
+  abstract listAssets(): Promise<readonly AssetView[]>;
+  abstract listMarkets(): Promise<readonly MarketView[]>;
 }
 
 @Injectable()
@@ -14,12 +14,12 @@ export class SeededRegistryRepository extends RegistryRepository {
     assertRegistryIntegrity(ASSETS, MARKETS);
   }
 
-  listAssets(): readonly AssetView[] {
-    return ASSETS;
+  async listAssets(): Promise<readonly AssetView[]> {
+    return Promise.resolve(ASSETS);
   }
 
-  listMarkets(): readonly MarketView[] {
-    return MARKETS;
+  async listMarkets(): Promise<readonly MarketView[]> {
+    return Promise.resolve(MARKETS);
   }
 }
 

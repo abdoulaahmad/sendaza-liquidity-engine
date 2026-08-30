@@ -1,8 +1,8 @@
-import { RegistryService } from '../../../packages/domain/src';
+import { RegistryService, SeededRegistryRepository } from '../../../packages/domain/src';
 import { RegistryController } from './registry.controller';
 
 describe('RegistryController', () => {
-  const controller = new RegistryController(new RegistryService());
+  const controller = new RegistryController(new RegistryService(new SeededRegistryRepository()));
 
   it('discovers one asset through two distinct network routes', () => {
     const response = controller.assets();

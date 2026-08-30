@@ -268,6 +268,22 @@ churn.
 Commits on feature branches contribute to the profile after they are merged into
 the default branch under GitHub's contribution rules.
 
+### Sprint contribution target
+
+Each sprint targets at least 30 meaningful GitHub contributions. The target is
+met through real delivery activity such as:
+
+- Focused implementation, test, migration, documentation, and tooling commits
+- Backlog issues with acceptance criteria and completion evidence
+- Pull requests for independently reviewable increments
+- Reviews and follow-up changes that improve correctness
+- Architecture decisions and operational runbooks
+
+Use merge commits or rebase-and-merge when the feature branch contains useful,
+coherent commits. Do not squash an entire sprint into one commit. No sprint is
+accepted based on contribution count alone: its tests and stated gate must also
+pass.
+
 ### Branches
 
 Create one short-lived branch for one story, defect, decision, or documentation

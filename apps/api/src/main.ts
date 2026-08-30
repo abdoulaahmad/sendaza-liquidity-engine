@@ -2,7 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { ApiModule } from './api.module';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(ApiModule);
+  const app = await NestFactory.create(ApiModule, { rawBody: true });
   app.setGlobalPrefix('api/v1');
   app.enableShutdownHooks();
 

@@ -1,14 +1,19 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { HealthController } from './health.controller';
 import { RegistryController } from './registry.controller';
 import { RegistryRepository, RegistryService } from '../../../packages/domain/src';
 import { DatabaseModule, PrismaRegistryRepository } from '../../../packages/database/src';
+import { CredentialSecretProvider } from '../../../packages/configuration/src';
+import { AuthenticationGuard } from './authentication.guard';
 
 @Module({
   imports: [DatabaseModule],
   controllers: [HealthController, RegistryController],
   providers: [
     RegistryService,
+    CredentialSecretProvider,
+    { provide: APP_GUARD, useClass: AuthenticationGuard },
     { provide: RegistryRepository, useExisting: PrismaRegistryRepository },
   ],
 })

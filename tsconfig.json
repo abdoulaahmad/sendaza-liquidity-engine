@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "declaration": true,
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2023",
+    "sourceMap": true,
+    "outDir": "./dist",
+    "incremental": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "strictNullChecks": true,
+    "noImplicitAny": true,
+    "strictBindCallApply": true,
+    "types": ["node", "jest"],
+    "forceConsistentCasingInFileNames": true,
+    "noFallthroughCasesInSwitch": true,
+    "paths": {
+      "@sle/domain": ["./packages/domain/src"],
+      "@sle/database": ["./packages/database/src"],
+      "@sle/contracts": ["./packages/contracts/src"],
+      "@sle/configuration": ["./packages/configuration/src"],
+      "@sle/observability": ["./packages/observability/src"],
+      "@sle/testing": ["./packages/testing/src"]
+    }
+  }
+}

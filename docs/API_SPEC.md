@@ -236,6 +236,9 @@ Signature input:
 timestamp + "." + raw_request_body
 ```
 
+The signature is HMAC-SHA256 encoded as unpadded base64url. The timestamp is
+RFC 3339 UTC and Sendaza validates it within the agreed replay window.
+
 Example:
 
 ```json

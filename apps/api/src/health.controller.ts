@@ -1,5 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
+import { PublicRoute } from './public-route.decorator';
 
+@PublicRoute()
 @Controller('health')
 export class HealthController {
   @Get('live')

@@ -243,6 +243,30 @@ Definition of Done, reviewers, and release gates. Avoid empty template documents
 Use an ADR for decisions affecting multiple modules, financial invariants,
 custody, customer debit, API compatibility, data migration, or reconciliation.
 
+### Sprint learning reports
+
+Every sprint maintains a junior-developer-friendly report in
+`docs/sprints/SPRINT_<number>_REPORT.html` and a matching generated PDF. Update
+the report throughout the sprint and regenerate the PDF before calling the
+sprint complete. Commit the HTML source and PDF together.
+
+Each report must explain in plain language:
+
+1. The sprint goal and its honest status: planned, delivered, deferred, or blocked
+2. What existed before the sprint and how this sprint connects to it
+3. What was built, with important files and components identified
+4. The end-to-end flow using a concrete example and a simple diagram
+5. How the work fits into the complete SLE and Sendaza architecture
+6. Financial, custody, security, and reliability rules protected by the work
+7. Tests and environment evidence, including tests that could not run
+8. Known limitations, risks, deferred work, and the next sprint dependency
+9. A short glossary for terms a junior developer may not know
+
+Do not describe planned or partially implemented behavior as complete. The PDF
+is a learning and handover artifact, not a substitute for canonical module or
+API specifications. When behavior changes, update the canonical documentation
+first, then make the sprint report explain the accepted behavior consistently.
+
 ## Git and GitHub Workflow
 
 - `main` is the protected default branch.

@@ -1,0 +1,23 @@
+@page { size: A4; margin: 16mm 15mm 18mm; }
+* { box-sizing: border-box; }
+body { margin: 0; color: #17212b; font: 14px/1.52 Arial, sans-serif; background: white; }
+main { max-width: 900px; margin: 0 auto; }
+h1, h2, h3 { color: #12324a; page-break-after: avoid; }
+h1 { font-size: 30px; margin: 0 0 8px; }
+h2 { font-size: 20px; margin: 28px 0 8px; padding-bottom: 5px; border-bottom: 2px solid #d7e1e8; }
+p, li { orphans: 3; widows: 3; }
+ul, ol { padding-left: 22px; }
+li { margin: 4px 0; }
+code { font-family: Consolas, monospace; background: #eef3f6; padding: 1px 4px; }
+.eyebrow { color: #527083; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
+.subtitle { color: #425968; font-size: 16px; margin: 0 0 18px; }
+.status { display: inline-block; border: 1px solid #78909c; padding: 5px 9px; font-weight: bold; }
+.done { border-color: #2e7d32; color: #1b5e20; }
+.progress { border-color: #b26a00; color: #8a5100; }
+.note { border-left: 4px solid #2f6f8f; background: #f2f7f9; padding: 10px 13px; margin: 14px 0; }
+.warning { border-left-color: #b26a00; background: #fff8e8; }
+.flow { white-space: pre-wrap; font: 13px/1.45 Consolas, monospace; background: #152632; color: #f4f8fa; padding: 14px; page-break-inside: avoid; }
+table { width: 100%; border-collapse: collapse; margin: 10px 0; page-break-inside: avoid; }
+th, td { border: 1px solid #c5d1d8; padding: 7px; text-align: left; vertical-align: top; }
+th { background: #e8f0f4; }
+footer { margin-top: 30px; color: #607681; font-size: 11px; border-top: 1px solid #ccd7dd; padding-top: 8px; }

@@ -5,3 +5,4 @@ export * from './authentication.repository';
 export * from './idempotency';
 export * from './audit';
 export * from './outbox';
+export * from './market-data';

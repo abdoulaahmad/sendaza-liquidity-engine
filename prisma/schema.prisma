@@ -230,6 +230,7 @@ model PriceObservation {
   receivedAt            DateTime                     @map("received_at") @db.Timestamptz(6)
   createdAt             DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
   snapshotInputs        ReferenceRateSnapshotInput[]
+  guardedSnapshots      ReferenceRateSnapshot[]      @relation("SnapshotGuardObservation")
 
   @@unique([providerPricePairId, deduplicationKey])
   @@index([providerPricePairId, providerObservedAt])
@@ -276,18 +277,20 @@ model ConversionRouteLeg {
 }
 
 model ReferenceRateSnapshot {
-  id              String                       @id @default(uuid()) @db.Uuid
-  routeId         String                       @map("route_id") @db.Uuid
-  route           ConversionRoute              @relation(fields: [routeId], references: [id], onDelete: Restrict)
-  rate            Decimal?                     @db.Decimal(60, 30)
-  outputScale     Int                          @map("output_scale")
-  roundingMode    RateRoundingMode             @map("rounding_mode")
-  status          ReferenceRateStatus
-  rejectionReason String?                      @map("rejection_reason") @db.VarChar(100)
-  calculatedAt    DateTime                     @map("calculated_at") @db.Timestamptz(6)
-  validUntil      DateTime?                    @map("valid_until") @db.Timestamptz(6)
-  inputs          ReferenceRateSnapshotInput[]
-  createdAt       DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+  id                 String                       @id @default(uuid()) @db.Uuid
+  routeId            String                       @map("route_id") @db.Uuid
+  route              ConversionRoute              @relation(fields: [routeId], references: [id], onDelete: Restrict)
+  rate               Decimal?                     @db.Decimal(60, 30)
+  outputScale        Int                          @map("output_scale")
+  roundingMode       RateRoundingMode             @map("rounding_mode")
+  status             ReferenceRateStatus
+  rejectionReason    String?                      @map("rejection_reason") @db.VarChar(100)
+  calculatedAt       DateTime                     @map("calculated_at") @db.Timestamptz(6)
+  validUntil         DateTime?                    @map("valid_until") @db.Timestamptz(6)
+  inputs             ReferenceRateSnapshotInput[]
+  guardObservationId String?                      @map("guard_observation_id") @db.Uuid
+  guardObservation   PriceObservation?            @relation("SnapshotGuardObservation", fields: [guardObservationId], references: [id], onDelete: Restrict)
+  createdAt          DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@index([routeId, status, calculatedAt])
   @@map("reference_rate_snapshots")

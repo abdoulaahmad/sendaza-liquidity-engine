@@ -16,8 +16,8 @@ Sendaza ledger entries, pricing, inventory, custody, or blockchain execution.
 - Transactional outbox claims, retries, and quarantine
 - Security and mutation audit records
 
-Public client onboarding, administrator authentication, webhook signing, and
-domain-specific financial mutations are excluded.
+Public client onboarding, administrator authentication, inbound provider webhook
+verification, and domain-specific financial mutations are excluded.
 
 ## HMAC Contract
 

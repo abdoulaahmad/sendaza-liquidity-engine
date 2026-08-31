@@ -1,0 +1,24 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>SLE Sprint 3</title><link rel="stylesheet" href="report.css"></head><body><main>
+<p class="eyebrow">Sendaza Liquidity Engine</p><h1>Sprint 3: Market Data and Conversion Routes</h1><p class="subtitle">How SLE turns provider facts into auditable reference rates</p><p class="status progress">In progress</p>
+<div class="note warning"><strong>Starting status:</strong> the module specification and pricing architecture decision are established. Database schema, adapters, evaluation logic, worker refresh, safety guards, and test evidence are not implemented yet.</div>
+<h2>What Came Before</h2><p>Sprint 1 taught SLE which assets, fiat currencies, networks, and markets exist. Sprint 2 made private requests and background events authenticated, retry-safe, and durable. Sprint 3 can now collect market facts without hardcoding ETH, USDT, USD, or NGN.</p>
+<h2>Goal in Simple Terms</h2><p>A provider may tell SLE that one ETH is worth a number of USDT. Another source may describe USDT in USD, and a reviewed manual version may describe USD in NGN for the free sandbox. Sprint 3 stores each fact and follows a configured recipe to calculate a reference rate such as ETH/NGN.</p>
+<h2>The Three Main Records</h2><table><tr><th>Record</th><th>Junior-friendly meaning</th></tr><tr><td>Observation</td><td>One immutable provider fact with its price and time.</td></tr><tr><td>Conversion route</td><td>An ordered recipe saying which pairs to multiply or divide.</td></tr><tr><td>Reference snapshot</td><td>The calculated result plus links to every observation used.</td></tr></table>
+<h2>Example Flow</h2><pre class="flow">Coinbase: ETH/USDT observation
+          | multiply
+Stablecoin guard: USDT/USD observation
+          | multiply
+Manual version: USD/NGN observation
+          v
+Configured ETH/NGN reference snapshot
+          |
+          v
+Sprint 4 quote engine adds spread and purchase fee</pre>
+<div class="note"><strong>Important boundary:</strong> Sprint 3 does not create a customer quote. It produces a reference rate. Sprint 4 owns the customer rate, spread, fees, limits, and expiry.</div>
+<h2>Exact Arithmetic</h2><p>Provider prices enter as decimal strings. Route math uses <code>decimal.js</code>, never JavaScript floating point. Intermediate legs retain working precision. The final rate is normalized once to a configured scale using recorded half-even rounding. Customer principal is not rounded here.</p>
+<h2>Safety Checks</h2><ul><li><strong>Staleness:</strong> old or missing observations cannot price a route.</li><li><strong>Deviation:</strong> an unexpectedly large move from the last accepted snapshot is rejected.</li><li><strong>Sequence gap:</strong> missing or backwards provider sequences make the pair unsafe.</li><li><strong>Stablecoin guard:</strong> a configured stablecoin must remain inside its explicit reference-fiat band.</li></ul><p>SLE never assumes an asset is stable merely because its symbol is USDT or USDC.</p>
+<h2>System Link</h2><p>Provider adapters remain behind a domain interface. PostgreSQL stores evidence and route versions. The worker refreshes observations and snapshots. Sprint 4 receives an accepted snapshot ID, while later reconciliation can reproduce exactly which source facts supported a quote.</p>
+<h2>Free MVP Limitation</h2><p>The sandbox may use Coinbase public reference data and a reviewed manual fiat cross-rate. This demonstrates the flow but is not approved for real funds. Independent redundant production sources remain a launch gate.</p>
+<h2>Planned Evidence</h2><ul><li>Exact direct and multi-leg arithmetic tests.</li><li>Stale, missing, deviation, sequence-gap, and depeg rejection tests.</li><li>Real PostgreSQL immutability, uniqueness, atomic snapshot, and concurrency tests.</li><li>Provider timeout and worker restart evidence.</li><li>A final updated Sprint 3 report and regenerated PDF.</li></ul>
+<h2>Glossary</h2><p><strong>Pair:</strong> two instruments whose relative price is observed. <strong>Leg:</strong> one step in a conversion route. <strong>Cross-rate:</strong> a rate calculated through intermediate pairs. <strong>Depeg:</strong> a stablecoin moving outside its expected reference band. <strong>Basis point:</strong> one hundredth of one percent.</p>
+<footer>Feature branch and canonical SLE documents. Started 31 August 2026; Sprint 3 remains in progress.</footer></main></body></html>

@@ -4,3 +4,4 @@ export * from './authentication';
 export * from './authentication.repository';
 export * from './idempotency';
 export * from './audit';
+export * from './outbox';

@@ -1,0 +1,21 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>SLE Sprint 2</title><link rel="stylesheet" href="report.css"></head><body><main>
+<p class="eyebrow">Sendaza Liquidity Engine</p><h1>Sprint 2: Authentication and Reliability</h1><p class="subtitle">How SLE verifies Sendaza and prevents duplicate financial work</p><p class="status progress">In progress</p>
+<div class="note warning"><strong>Current status:</strong> HMAC authentication, credential rotation support, raw-body verification, nonce replay protection, and the idempotency foundation exist on the feature branch. Outbox delivery, audit logging, full database race evidence, and the sprint gate remain unfinished.</div>
+<h2>Before and Goal</h2><p>Sprint 0 created the app and Sprint 1 added exact registries. Sprint 2 adds three safety layers: prove the caller is Sendaza, reject copied signed requests, and ensure retrying one financial instruction cannot create two effects.</p>
+<h2>Signed Request Flow</h2><pre class="flow">Sendaza builds method + URL + timestamp + nonce + body hash
+  -> signs with HMAC secret
+  -> SLE validates time, credential, and signature
+  -> PostgreSQL atomically stores hashed nonce
+  -> controller may run</pre><p>The database stores key metadata and nonce hashes, never the HMAC secret. One or two environment-backed keys support rotation without downtime.</p>
+<h2>Idempotency Flow</h2><pre class="flow">Mutation + Idempotency-Key
+  -> hash operation, client, method, exact URL, exact body
+  -> unique database identity: client + operation + key
+     first = ACQUIRED | same complete = REPLAY
+     different body = KEY_REUSED | running = IN_PROGRESS</pre><p>A financial module must complete its idempotency record in the same PostgreSQL transaction as its financial state change.</p>
+<h2>Built So Far</h2><ul><li>Canonical HMAC-SHA256 signing and constant-time verification.</li><li>Environment-only secrets and two-key rotation support.</li><li>Prisma credential metadata and atomic nonce repositories.</li><li>Global NestJS authentication guard; health endpoints remain public.</li><li>Exact raw request-body and request-target signing.</li><li>Domain request hashing and database acquire/replay/conflict decisions.</li><li>Mutation interceptor requiring an explicit stable operation and key.</li></ul>
+<h2>System Link</h2><p>Purchases, withdrawals, and manual actions will reuse these controls. Authentication fixes the caller identity as <code>sendaza-core</code>. Idempotency stops client retries from duplicating effects. The pending outbox will commit state and outbound Sendaza events together.</p>
+<h2>Rules Protected</h2><ul><li>Customer frontends never call SLE directly.</li><li>Secrets never enter PostgreSQL or logs.</li><li>Every financial mutation needs a stored request hash.</li><li>Process memory is not replay or idempotency truth.</li><li>Infrastructure uncertainty fails closed.</li></ul>
+<h2>Evidence and Remaining Work</h2><p>Before the current idempotency edit, 10 suites and 40 tests passed with typecheck, lint, and both builds. Railway PostgreSQL rejected a duplicate credential nonce with code <code>23505</code> inside a rolled-back transaction. The new work still needs a fresh full verification.</p><ul><li>Finish real PostgreSQL idempotency concurrency evidence.</li><li>Add safe audit records.</li><li>Add outbox leasing, retry, recovery, and quarantine.</li><li>Run restart evidence and the complete Sprint 2 gate.</li></ul>
+<h2>Next Sprint</h2><p>Sprint 3 adds market-data providers and conversion routes on this authenticated, retry-safe, durable foundation.</p>
+<h2>Glossary</h2><p><strong>HMAC:</strong> shared-secret message signature. <strong>Nonce:</strong> one-time replay detector. <strong>Idempotency:</strong> retrying has no extra effect. <strong>Request hash:</strong> digest binding a key to content. <strong>Outbox:</strong> durable records for post-commit event delivery.</p>
+<footer>Feature branch and canonical SLE documents. Generated 31 August 2026; Sprint 2 remains in progress.</footer></main></body></html>

@@ -7,6 +7,7 @@ import { DatabaseModule, PrismaRegistryRepository } from '../../../packages/data
 import { CredentialSecretProvider } from '../../../packages/configuration/src';
 import { AuthenticationGuard } from './authentication.guard';
 import { IdempotencyInterceptor } from './idempotency.interceptor';
+import { AuditInterceptor } from './audit.interceptor';
 
 @Module({
   imports: [DatabaseModule],
@@ -15,6 +16,7 @@ import { IdempotencyInterceptor } from './idempotency.interceptor';
     RegistryService,
     CredentialSecretProvider,
     { provide: APP_GUARD, useClass: AuthenticationGuard },
+    { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
     { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
     { provide: RegistryRepository, useExisting: PrismaRegistryRepository },
   ],

@@ -3,3 +3,4 @@ export * from './prisma.service';
 export * from './database.module';
 export * from './prisma-authentication.repository';
 export * from './prisma-idempotency.repository';
+export * from './prisma-audit.repository';

@@ -9,8 +9,10 @@ import {
   AuthenticationNonceRepository,
   CredentialMetadataRepository,
   IdempotencyRepository,
+  AuditRepository,
 } from '../../domain/src';
 import { PrismaIdempotencyRepository } from './prisma-idempotency.repository';
+import { PrismaAuditRepository } from './prisma-audit.repository';
 
 @Module({
   providers: [
@@ -19,15 +21,18 @@ import { PrismaIdempotencyRepository } from './prisma-idempotency.repository';
     PrismaAuthenticationNonceRepository,
     PrismaCredentialMetadataRepository,
     PrismaIdempotencyRepository,
+    PrismaAuditRepository,
     { provide: AuthenticationNonceRepository, useExisting: PrismaAuthenticationNonceRepository },
     { provide: CredentialMetadataRepository, useExisting: PrismaCredentialMetadataRepository },
     { provide: IdempotencyRepository, useExisting: PrismaIdempotencyRepository },
+    { provide: AuditRepository, useExisting: PrismaAuditRepository },
   ],
   exports: [
     PrismaRegistryRepository,
     AuthenticationNonceRepository,
     CredentialMetadataRepository,
     IdempotencyRepository,
+    AuditRepository,
   ],
 })
 export class DatabaseModule {}

@@ -5,7 +5,12 @@ import {
   PrismaAuthenticationNonceRepository,
   PrismaCredentialMetadataRepository,
 } from './prisma-authentication.repository';
-import { AuthenticationNonceRepository, CredentialMetadataRepository } from '../../domain/src';
+import {
+  AuthenticationNonceRepository,
+  CredentialMetadataRepository,
+  IdempotencyRepository,
+} from '../../domain/src';
+import { PrismaIdempotencyRepository } from './prisma-idempotency.repository';
 
 @Module({
   providers: [
@@ -13,9 +18,16 @@ import { AuthenticationNonceRepository, CredentialMetadataRepository } from '../
     PrismaRegistryRepository,
     PrismaAuthenticationNonceRepository,
     PrismaCredentialMetadataRepository,
+    PrismaIdempotencyRepository,
     { provide: AuthenticationNonceRepository, useExisting: PrismaAuthenticationNonceRepository },
     { provide: CredentialMetadataRepository, useExisting: PrismaCredentialMetadataRepository },
+    { provide: IdempotencyRepository, useExisting: PrismaIdempotencyRepository },
   ],
-  exports: [PrismaRegistryRepository, AuthenticationNonceRepository, CredentialMetadataRepository],
+  exports: [
+    PrismaRegistryRepository,
+    AuthenticationNonceRepository,
+    CredentialMetadataRepository,
+    IdempotencyRepository,
+  ],
 })
 export class DatabaseModule {}

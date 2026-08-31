@@ -16,6 +16,7 @@ export interface ClaimedOutboxEvent {
   readonly eventType: string;
   readonly payload: JsonValue;
   readonly correlationId: string;
+  readonly occurredAt: Date;
   readonly attemptCount: number;
   readonly maxAttempts: number;
   readonly leaseToken: string;

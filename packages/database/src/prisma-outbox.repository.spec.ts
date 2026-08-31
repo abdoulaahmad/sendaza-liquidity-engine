@@ -70,6 +70,7 @@ describe('PrismaOutboxRepository', () => {
         eventtype: 'purchase.created',
         payload: { state: 'CREATED' },
         correlationid: '00000000-0000-4000-8000-000000000001',
+        occurredat: new Date('2026-08-31T11:59:00.000Z'),
         leasetoken: '00000000-0000-4000-8000-000000000002',
         leaseexpiresat: new Date(),
         attemptcount: 1,

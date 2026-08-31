@@ -16,6 +16,7 @@ type ClaimedRow = {
   eventtype: string;
   payload: Prisma.JsonValue;
   correlationid: string;
+  occurredat: Date;
   attemptcount: number;
   maxattempts: number;
   leasetoken: string;
@@ -92,6 +93,7 @@ export class PrismaOutboxRepository implements OutboxRepository {
           event.event_type AS eventType,
           event.payload,
           event.correlation_id AS correlationId,
+          event.created_at AS occurredAt,
           event.attempt_count AS attemptCount,
           event.max_attempts AS maxAttempts,
           event.lease_token AS leaseToken,
@@ -105,6 +107,7 @@ export class PrismaOutboxRepository implements OutboxRepository {
       eventType: row.eventtype,
       payload: row.payload as JsonValue,
       correlationId: row.correlationid,
+      occurredAt: row.occurredat,
       attemptCount: row.attemptcount,
       maxAttempts: row.maxattempts,
       leaseToken: row.leasetoken,

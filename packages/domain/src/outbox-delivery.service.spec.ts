@@ -13,6 +13,7 @@ describe('OutboxDeliveryService', () => {
     eventType: 'purchase.created',
     payload: { state: 'CREATED' },
     correlationId: '00000000-0000-4000-8000-000000000001',
+    occurredAt: new Date('2026-08-31T11:59:00.000Z'),
     attemptCount: 1,
     maxAttempts: 3,
     leaseToken: '00000000-0000-4000-8000-000000000002',

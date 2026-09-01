@@ -133,7 +133,7 @@ Independent redundant production pricing remains a mainnet launch gate.
 
 ## ADR-009: Purchase Quotes Use Total Debit and Versioned Economics
 
-**Decision:** Proposed for Sprint 4 review
+**Decision:** Accepted
 
 A BUY quote request supplies the exact total fiat debit. SLE deducts the
 versioned fixed and percentage purchase fees, converts the remaining trade

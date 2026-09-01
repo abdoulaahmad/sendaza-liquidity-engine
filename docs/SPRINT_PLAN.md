@@ -103,8 +103,8 @@ quoting, and no asset or fiat branch is hardcoded.
 
 ## Sprint 4: Executable Quote Engine
 
-**Status:** In progress from 1 September 2026. Quote economics are specified in
-proposed ADR-009 and require review before schema implementation.
+**Status:** In progress from 1 September 2026. Quote economics are approved in
+ADR-009; schema implementation is the current step.
 
 **Outcome:** Sendaza receives immutable purchase quotes containing SLE-owned
 spreads, fees, exact amounts, and expiry.

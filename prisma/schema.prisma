@@ -64,6 +64,23 @@ enum PricingRefreshJobStatus {
   LEASED
 }
 
+enum QuoteSide {
+  BUY
+}
+
+enum QuotePolicyStatus {
+  ACTIVE
+  RETIRED
+}
+
+enum FeeRoundingMode {
+  CEILING
+}
+
+enum DestinationRoundingMode {
+  FLOOR
+}
+
 model Asset {
   id                String             @id @default(uuid()) @db.Uuid
   symbol            String             @unique @db.VarChar(20)
@@ -127,6 +144,7 @@ model AssetNetwork {
   maxWithdrawalAtomic BigInt?        @map("max_withdrawal_atomic")
   status              RegistryStatus @default(ENABLED)
   defaultForMarkets   Market[]
+  quotes              Quote[]
   createdAt           DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -142,6 +160,8 @@ model ConfigurationVersion {
   markets             Market[]
   conversionRoutes    ConversionRoute[]
   manualPriceVersions ManualPriceVersion[]
+  quotePolicyVersions QuotePolicyVersion[]
+  quotes              Quote[]
 
   @@map("configuration_versions")
 }
@@ -166,6 +186,8 @@ model Market {
   updatedAt                    DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
   conversionRoutes             ConversionRoute[]
   pricingRefreshJob            PricingRefreshJob?
+  quotePolicyVersions          QuotePolicyVersion[]
+  quotes                       Quote[]
 
   @@unique([baseAssetId, quoteFiatId])
   @@map("markets")
@@ -317,6 +339,7 @@ model ReferenceRateSnapshot {
   guardObservationId String?                      @map("guard_observation_id") @db.Uuid
   guardObservation   PriceObservation?            @relation("SnapshotGuardObservation", fields: [guardObservationId], references: [id], onDelete: Restrict)
   createdAt          DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+  quotes             Quote[]
 
   @@index([routeId, status, calculatedAt])
   @@map("reference_rate_snapshots")
@@ -353,6 +376,70 @@ model ManualPriceVersion {
   @@unique([providerPricePairId, version])
   @@index([providerPricePairId, effectiveFrom])
   @@map("manual_price_versions")
+}
+
+model QuotePolicyVersion {
+  id                     String               @id @default(uuid()) @db.Uuid
+  marketId               String               @map("market_id") @db.Uuid
+  market                 Market               @relation(fields: [marketId], references: [id], onDelete: Restrict)
+  version                Int
+  spreadBps              Int                  @map("spread_bps")
+  fixedFeeAtomic         BigInt               @map("fixed_fee_atomic")
+  percentageFeeBps       Int                  @map("percentage_fee_bps")
+  minTotalDebitAtomic    BigInt               @map("min_total_debit_atomic")
+  maxTotalDebitAtomic    BigInt               @map("max_total_debit_atomic")
+  quoteTtlSeconds        Int                  @map("quote_ttl_seconds")
+  rateDisplayScale       Int                  @map("rate_display_scale")
+  status                 QuotePolicyStatus
+  configurationVersionId Int                  @map("configuration_version_id")
+  configurationVersion   ConfigurationVersion @relation(fields: [configurationVersionId], references: [id], onDelete: Restrict)
+  actorId                String               @map("actor_id") @db.VarChar(100)
+  reason                 String               @db.VarChar(500)
+  effectiveFrom          DateTime             @map("effective_from") @db.Timestamptz(6)
+  effectiveUntil         DateTime?            @map("effective_until") @db.Timestamptz(6)
+  quotes                 Quote[]
+  createdAt              DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([marketId, version])
+  @@index([marketId, status, effectiveFrom])
+  @@map("quote_policy_versions")
+}
+
+model Quote {
+  id                      String                  @id @default(uuid()) @db.Uuid
+  side                    QuoteSide
+  marketId                String                  @map("market_id") @db.Uuid
+  market                  Market                  @relation(fields: [marketId], references: [id], onDelete: Restrict)
+  backingAssetNetworkId   String                  @map("backing_asset_network_id") @db.Uuid
+  backingAssetNetwork     AssetNetwork            @relation(fields: [backingAssetNetworkId], references: [id], onDelete: Restrict)
+  referenceRateSnapshotId String                  @map("reference_rate_snapshot_id") @db.Uuid
+  referenceRateSnapshot   ReferenceRateSnapshot   @relation(fields: [referenceRateSnapshotId], references: [id], onDelete: Restrict)
+  quotePolicyVersionId    String                  @map("quote_policy_version_id") @db.Uuid
+  quotePolicyVersion      QuotePolicyVersion      @relation(fields: [quotePolicyVersionId], references: [id], onDelete: Restrict)
+  configurationVersionId  Int                     @map("configuration_version_id")
+  configurationVersion    ConfigurationVersion    @relation(fields: [configurationVersionId], references: [id], onDelete: Restrict)
+  totalDebitAtomic        BigInt                  @map("total_debit_atomic")
+  fixedFeeAtomic          BigInt                  @map("fixed_fee_atomic")
+  percentageFeeAtomic     BigInt                  @map("percentage_fee_atomic")
+  percentageFeeBps        Int                     @map("percentage_fee_bps")
+  totalFeeAtomic          BigInt                  @map("total_fee_atomic")
+  tradeAmountAtomic       BigInt                  @map("trade_amount_atomic")
+  spreadBps               Int                     @map("spread_bps")
+  spreadAmountAtomic      BigInt                  @map("spread_amount_atomic")
+  destinationAmountAtomic BigInt                  @map("destination_amount_atomic")
+  quoteFiatDecimals       Int                     @map("quote_fiat_decimals")
+  baseAssetDecimals       Int                     @map("base_asset_decimals")
+  referenceRate           Decimal                 @map("reference_rate") @db.Decimal(60, 30)
+  customerRate            Decimal                 @map("customer_rate") @db.Decimal(60, 30)
+  rateDisplayScale        Int                     @map("rate_display_scale")
+  feeRoundingMode         FeeRoundingMode         @map("fee_rounding_mode")
+  destinationRoundingMode DestinationRoundingMode @map("destination_rounding_mode")
+  expiresAt               DateTime                @map("expires_at") @db.Timestamptz(6)
+  createdAt               DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([marketId, createdAt])
+  @@index([expiresAt])
+  @@map("quotes")
 }
 
 model ConfigurationAuditLog {

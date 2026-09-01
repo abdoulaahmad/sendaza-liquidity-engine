@@ -5,3 +5,5 @@ export * from './prisma-authentication.repository';
 export * from './prisma-idempotency.repository';
 export * from './prisma-audit.repository';
 export * from './prisma-outbox.repository';
+export * from './prisma-pricing.repository';
+export * from './prisma-pricing-refresh-job.repository';

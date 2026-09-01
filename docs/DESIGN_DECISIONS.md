@@ -108,3 +108,20 @@ Customer liabilities may be represented by asset, but on-chain inventory and
 withdrawal execution are scoped by `asset_network_id`. SLE cannot use holdings
 on one network to approve a withdrawal on another network unless a separate
 rebalancing workflow has completed and reconciled the movement.
+
+## ADR-008: Pricing Uses Versioned Instruments, Routes, And Evidence
+
+**Decision:** Accepted
+
+Pricing is configuration-driven through normalized asset/fiat instruments,
+provider pair mappings, and ordered versioned conversion-route legs. Every
+reference-rate snapshot links to the exact immutable observations used.
+
+Provider values enter as decimal strings. Route arithmetic uses `decimal.js` and
+normalizes once at the configured output scale with recorded `ROUND_HALF_EVEN`.
+Stablecoin status is explicit route policy backed by a fresh reference pair; SLE
+does not infer stability from an asset symbol.
+
+The free MVP may demonstrate Coinbase public reference prices plus a reviewed,
+versioned manual fiat cross-rate. This single-source design is test-only.
+Independent redundant production pricing remains a mainnet launch gate.

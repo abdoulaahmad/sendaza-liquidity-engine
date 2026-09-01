@@ -11,10 +11,14 @@ import {
   IdempotencyRepository,
   AuditRepository,
   OutboxRepository,
+  PricingRepository,
+  PricingRefreshJobRepository,
 } from '../../domain/src';
 import { PrismaIdempotencyRepository } from './prisma-idempotency.repository';
 import { PrismaAuditRepository } from './prisma-audit.repository';
 import { PrismaOutboxRepository } from './prisma-outbox.repository';
+import { PrismaPricingRepository } from './prisma-pricing.repository';
+import { PrismaPricingRefreshJobRepository } from './prisma-pricing-refresh-job.repository';
 
 @Module({
   providers: [
@@ -25,11 +29,18 @@ import { PrismaOutboxRepository } from './prisma-outbox.repository';
     PrismaIdempotencyRepository,
     PrismaAuditRepository,
     PrismaOutboxRepository,
+    PrismaPricingRepository,
+    PrismaPricingRefreshJobRepository,
     { provide: AuthenticationNonceRepository, useExisting: PrismaAuthenticationNonceRepository },
     { provide: CredentialMetadataRepository, useExisting: PrismaCredentialMetadataRepository },
     { provide: IdempotencyRepository, useExisting: PrismaIdempotencyRepository },
     { provide: AuditRepository, useExisting: PrismaAuditRepository },
     { provide: OutboxRepository, useExisting: PrismaOutboxRepository },
+    { provide: PricingRepository, useExisting: PrismaPricingRepository },
+    {
+      provide: PricingRefreshJobRepository,
+      useExisting: PrismaPricingRefreshJobRepository,
+    },
   ],
   exports: [
     PrismaRegistryRepository,
@@ -38,6 +49,8 @@ import { PrismaOutboxRepository } from './prisma-outbox.repository';
     IdempotencyRepository,
     AuditRepository,
     OutboxRepository,
+    PricingRepository,
+    PricingRefreshJobRepository,
   ],
 })
 export class DatabaseModule {}

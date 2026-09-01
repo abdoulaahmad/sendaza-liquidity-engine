@@ -34,105 +34,325 @@ enum OutboxStatus {
   QUARANTINED
 }
 
+enum PricingProviderType {
+  COINBASE_PUBLIC
+  MANUAL
+  DETERMINISTIC_FAKE
+}
+
+enum PricingInstrumentKind {
+  ASSET
+  FIAT
+}
+
+enum RouteLegOperation {
+  MULTIPLY
+  DIVIDE
+}
+
+enum ReferenceRateStatus {
+  ACCEPTED
+  REJECTED
+}
+
+enum RateRoundingMode {
+  HALF_EVEN
+}
+
+enum PricingRefreshJobStatus {
+  PENDING
+  LEASED
+}
+
 model Asset {
-  id              String          @id @default(uuid()) @db.Uuid
-  symbol          String          @unique @db.VarChar(20)
-  name            String          @db.VarChar(100)
-  kind            AssetKind
-  decimals        Int
-  status          RegistryStatus  @default(ENABLED)
-  nativeNetworks  Network[]       @relation("NativeAsset")
-  assetNetworks   AssetNetwork[]
-  markets         Market[]
-  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                String             @id @default(uuid()) @db.Uuid
+  symbol            String             @unique @db.VarChar(20)
+  name              String             @db.VarChar(100)
+  kind              AssetKind
+  decimals          Int
+  status            RegistryStatus     @default(ENABLED)
+  nativeNetworks    Network[]          @relation("NativeAsset")
+  assetNetworks     AssetNetwork[]
+  markets           Market[]
+  pricingInstrument PricingInstrument?
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@map("assets")
 }
 
 model FiatCurrency {
-  id        String          @id @default(uuid()) @db.Uuid
-  code      String          @unique @db.VarChar(3)
-  name      String          @db.VarChar(100)
-  decimals  Int
-  status    RegistryStatus  @default(ENABLED)
-  markets   Market[]
-  createdAt DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                String             @id @default(uuid()) @db.Uuid
+  code              String             @unique @db.VarChar(3)
+  name              String             @db.VarChar(100)
+  decimals          Int
+  status            RegistryStatus     @default(ENABLED)
+  markets           Market[]
+  pricingInstrument PricingInstrument?
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@map("fiat_currencies")
 }
 
 model Network {
-  id                    String          @id @default(uuid()) @db.Uuid
-  code                  String          @unique @db.VarChar(30)
-  name                  String          @db.VarChar(100)
-  nativeAssetId         String          @map("native_asset_id") @db.Uuid
-  nativeAsset           Asset           @relation("NativeAsset", fields: [nativeAssetId], references: [id])
-  addressFamily         String          @map("address_family") @db.VarChar(30)
-  requiredConfirmations Int             @map("required_confirmations")
-  status                RegistryStatus  @default(ENABLED)
+  id                    String         @id @default(uuid()) @db.Uuid
+  code                  String         @unique @db.VarChar(30)
+  name                  String         @db.VarChar(100)
+  nativeAssetId         String         @map("native_asset_id") @db.Uuid
+  nativeAsset           Asset          @relation("NativeAsset", fields: [nativeAssetId], references: [id])
+  addressFamily         String         @map("address_family") @db.VarChar(30)
+  requiredConfirmations Int            @map("required_confirmations")
+  status                RegistryStatus @default(ENABLED)
   assetNetworks         AssetNetwork[]
-  createdAt             DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt             DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt             DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@map("networks")
 }
 
 model AssetNetwork {
-  id                     String          @id @default(uuid()) @db.Uuid
-  assetId                String          @map("asset_id") @db.Uuid
-  asset                  Asset           @relation(fields: [assetId], references: [id])
-  networkId              String          @map("network_id") @db.Uuid
-  network                Network         @relation(fields: [networkId], references: [id])
-  tokenStandard          String          @map("token_standard") @db.VarChar(30)
-  contractAddress        String?         @map("contract_address") @db.VarChar(255)
-  networkDecimals        Int             @map("network_decimals")
-  providerAssetCode      String?         @map("provider_asset_code") @db.VarChar(100)
-  depositsEnabled        Boolean         @default(false) @map("deposits_enabled")
-  withdrawalsEnabled     Boolean         @default(false) @map("withdrawals_enabled")
-  minWithdrawalAtomic    BigInt?          @map("min_withdrawal_atomic")
-  maxWithdrawalAtomic    BigInt?          @map("max_withdrawal_atomic")
-  status                 RegistryStatus  @default(ENABLED)
-  defaultForMarkets      Market[]
-  createdAt              DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt              DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                  String         @id @default(uuid()) @db.Uuid
+  assetId             String         @map("asset_id") @db.Uuid
+  asset               Asset          @relation(fields: [assetId], references: [id])
+  networkId           String         @map("network_id") @db.Uuid
+  network             Network        @relation(fields: [networkId], references: [id])
+  tokenStandard       String         @map("token_standard") @db.VarChar(30)
+  contractAddress     String?        @map("contract_address") @db.VarChar(255)
+  networkDecimals     Int            @map("network_decimals")
+  providerAssetCode   String?        @map("provider_asset_code") @db.VarChar(100)
+  depositsEnabled     Boolean        @default(false) @map("deposits_enabled")
+  withdrawalsEnabled  Boolean        @default(false) @map("withdrawals_enabled")
+  minWithdrawalAtomic BigInt?        @map("min_withdrawal_atomic")
+  maxWithdrawalAtomic BigInt?        @map("max_withdrawal_atomic")
+  status              RegistryStatus @default(ENABLED)
+  defaultForMarkets   Market[]
+  createdAt           DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@unique([assetId, networkId])
   @@map("asset_networks")
 }
 
 model ConfigurationVersion {
-  id          Int       @id @default(autoincrement())
-  description String    @db.VarChar(255)
-  actorId     String    @map("actor_id") @db.VarChar(100)
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  markets     Market[]
+  id                  Int                  @id @default(autoincrement())
+  description         String               @db.VarChar(255)
+  actorId             String               @map("actor_id") @db.VarChar(100)
+  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  markets             Market[]
+  conversionRoutes    ConversionRoute[]
+  manualPriceVersions ManualPriceVersion[]
 
   @@map("configuration_versions")
 }
 
 model Market {
-  id                           String                @id @default(uuid()) @db.Uuid
-  baseAssetId                  String                @map("base_asset_id") @db.Uuid
-  baseAsset                    Asset                 @relation(fields: [baseAssetId], references: [id])
-  quoteFiatId                  String                @map("quote_fiat_id") @db.Uuid
-  quoteFiat                    FiatCurrency          @relation(fields: [quoteFiatId], references: [id])
-  defaultBackingAssetNetworkId String                @map("default_backing_asset_network_id") @db.Uuid
-  defaultBackingAssetNetwork   AssetNetwork          @relation(fields: [defaultBackingAssetNetworkId], references: [id])
-  spreadBps                    Int                   @default(0) @map("spread_bps")
-  fixedFeeAtomic               BigInt                @default(0) @map("fixed_fee_atomic")
-  minOrderAtomic               BigInt                @map("min_order_atomic")
-  maxOrderAtomic               BigInt                @map("max_order_atomic")
-  quoteTtlSeconds              Int                   @map("quote_ttl_seconds")
-  status                       RegistryStatus        @default(ENABLED)
-  configurationVersionId       Int                   @map("configuration_version_id")
-  configurationVersion         ConfigurationVersion  @relation(fields: [configurationVersionId], references: [id])
-  createdAt                    DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt                    DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                           String               @id @default(uuid()) @db.Uuid
+  baseAssetId                  String               @map("base_asset_id") @db.Uuid
+  baseAsset                    Asset                @relation(fields: [baseAssetId], references: [id])
+  quoteFiatId                  String               @map("quote_fiat_id") @db.Uuid
+  quoteFiat                    FiatCurrency         @relation(fields: [quoteFiatId], references: [id])
+  defaultBackingAssetNetworkId String               @map("default_backing_asset_network_id") @db.Uuid
+  defaultBackingAssetNetwork   AssetNetwork         @relation(fields: [defaultBackingAssetNetworkId], references: [id])
+  spreadBps                    Int                  @default(0) @map("spread_bps")
+  fixedFeeAtomic               BigInt               @default(0) @map("fixed_fee_atomic")
+  minOrderAtomic               BigInt               @map("min_order_atomic")
+  maxOrderAtomic               BigInt               @map("max_order_atomic")
+  quoteTtlSeconds              Int                  @map("quote_ttl_seconds")
+  status                       RegistryStatus       @default(ENABLED)
+  configurationVersionId       Int                  @map("configuration_version_id")
+  configurationVersion         ConfigurationVersion @relation(fields: [configurationVersionId], references: [id])
+  createdAt                    DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                    DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  conversionRoutes             ConversionRoute[]
+  pricingRefreshJob            PricingRefreshJob?
 
   @@unique([baseAssetId, quoteFiatId])
   @@map("markets")
+}
+
+model PricingRefreshJob {
+  id                     String                  @id @default(uuid()) @db.Uuid
+  marketId               String                  @unique @map("market_id") @db.Uuid
+  market                 Market                  @relation(fields: [marketId], references: [id], onDelete: Restrict)
+  refreshIntervalSeconds Int                     @map("refresh_interval_seconds")
+  status                 PricingRefreshJobStatus @default(PENDING)
+  nextRefreshAt          DateTime                @default(now()) @map("next_refresh_at") @db.Timestamptz(6)
+  leaseToken             String?                 @map("lease_token") @db.Uuid
+  leaseExpiresAt         DateTime?               @map("lease_expires_at") @db.Timestamptz(6)
+  attemptCount           Int                     @default(0) @map("attempt_count")
+  lastErrorCode          String?                 @map("last_error_code") @db.VarChar(100)
+  createdAt              DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([status, nextRefreshAt])
+  @@index([leaseExpiresAt])
+  @@map("pricing_refresh_jobs")
+}
+
+model PricingProvider {
+  id                     String              @id @default(uuid()) @db.Uuid
+  code                   String              @unique @db.VarChar(50)
+  type                   PricingProviderType
+  configurationReference String?             @map("configuration_reference") @db.VarChar(200)
+  status                 RegistryStatus      @default(ENABLED)
+  pricePairs             ProviderPricePair[]
+  createdAt              DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("pricing_providers")
+}
+
+model PricingInstrument {
+  id             String                @id @default(uuid()) @db.Uuid
+  kind           PricingInstrumentKind
+  assetId        String?               @unique @map("asset_id") @db.Uuid
+  asset          Asset?                @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  fiatCurrencyId String?               @unique @map("fiat_currency_id") @db.Uuid
+  fiatCurrency   FiatCurrency?         @relation(fields: [fiatCurrencyId], references: [id], onDelete: Restrict)
+  basePairs      ProviderPricePair[]   @relation("ProviderPairBase")
+  quotePairs     ProviderPricePair[]   @relation("ProviderPairQuote")
+  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("pricing_instruments")
+}
+
+model ProviderPricePair {
+  id                  String               @id @default(uuid()) @db.Uuid
+  providerId          String               @map("provider_id") @db.Uuid
+  provider            PricingProvider      @relation(fields: [providerId], references: [id], onDelete: Restrict)
+  baseInstrumentId    String               @map("base_instrument_id") @db.Uuid
+  baseInstrument      PricingInstrument    @relation("ProviderPairBase", fields: [baseInstrumentId], references: [id], onDelete: Restrict)
+  quoteInstrumentId   String               @map("quote_instrument_id") @db.Uuid
+  quoteInstrument     PricingInstrument    @relation("ProviderPairQuote", fields: [quoteInstrumentId], references: [id], onDelete: Restrict)
+  providerPairCode    String               @map("provider_pair_code") @db.VarChar(100)
+  priceScale          Int                  @map("price_scale")
+  maxAgeSeconds       Int                  @map("max_age_seconds")
+  sequenceEnforced    Boolean              @default(false) @map("sequence_enforced")
+  status              RegistryStatus       @default(ENABLED)
+  observations        PriceObservation[]
+  routeLegs           ConversionRouteLeg[]
+  guardedRoutes       ConversionRoute[]    @relation("StablecoinGuardPair")
+  manualPriceVersions ManualPriceVersion[]
+  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([providerId, providerPairCode])
+  @@unique([providerId, baseInstrumentId, quoteInstrumentId])
+  @@map("provider_price_pairs")
+}
+
+model PriceObservation {
+  id                    String                       @id @default(uuid()) @db.Uuid
+  providerPricePairId   String                       @map("provider_price_pair_id") @db.Uuid
+  providerPricePair     ProviderPricePair            @relation(fields: [providerPricePairId], references: [id], onDelete: Restrict)
+  normalizedRate        Decimal                      @map("normalized_rate") @db.Decimal(60, 30)
+  rawRate               String                       @map("raw_rate") @db.VarChar(160)
+  providerObservedAt    DateTime                     @map("provider_observed_at") @db.Timestamptz(6)
+  providerSequence      String?                      @map("provider_sequence") @db.VarChar(100)
+  sequenceGap           Boolean                      @default(false) @map("sequence_gap")
+  deduplicationKey      String                       @map("deduplication_key") @db.VarChar(200)
+  safeProviderReference String?                      @map("safe_provider_reference") @db.VarChar(200)
+  receivedAt            DateTime                     @map("received_at") @db.Timestamptz(6)
+  createdAt             DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+  snapshotInputs        ReferenceRateSnapshotInput[]
+  guardedSnapshots      ReferenceRateSnapshot[]      @relation("SnapshotGuardObservation")
+
+  @@unique([providerPricePairId, deduplicationKey])
+  @@index([providerPricePairId, providerObservedAt])
+  @@map("price_observations")
+}
+
+model ConversionRoute {
+  id                     String                  @id @default(uuid()) @db.Uuid
+  marketId               String                  @map("market_id") @db.Uuid
+  market                 Market                  @relation(fields: [marketId], references: [id], onDelete: Restrict)
+  version                Int
+  outputScale            Int                     @map("output_scale")
+  maxAgeSeconds          Int                     @map("max_age_seconds")
+  maxDeviationBps        Int                     @map("max_deviation_bps")
+  stablecoinGuardPairId  String?                 @map("stablecoin_guard_pair_id") @db.Uuid
+  stablecoinGuardPair    ProviderPricePair?      @relation("StablecoinGuardPair", fields: [stablecoinGuardPairId], references: [id], onDelete: Restrict)
+  stablecoinExpectedRate Decimal?                @map("stablecoin_expected_rate") @db.Decimal(60, 30)
+  stablecoinToleranceBps Int?                    @map("stablecoin_tolerance_bps")
+  status                 RegistryStatus          @default(DISABLED)
+  configurationVersionId Int                     @map("configuration_version_id")
+  configurationVersion   ConfigurationVersion    @relation(fields: [configurationVersionId], references: [id], onDelete: Restrict)
+  legs                   ConversionRouteLeg[]
+  snapshots              ReferenceRateSnapshot[]
+  createdAt              DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([marketId, version])
+  @@map("conversion_routes")
+}
+
+model ConversionRouteLeg {
+  id                  String                       @id @default(uuid()) @db.Uuid
+  routeId             String                       @map("route_id") @db.Uuid
+  route               ConversionRoute              @relation(fields: [routeId], references: [id], onDelete: Restrict)
+  sequence            Int
+  providerPricePairId String                       @map("provider_price_pair_id") @db.Uuid
+  providerPricePair   ProviderPricePair            @relation(fields: [providerPricePairId], references: [id], onDelete: Restrict)
+  operation           RouteLegOperation
+  snapshotInputs      ReferenceRateSnapshotInput[]
+  createdAt           DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([routeId, sequence])
+  @@map("conversion_route_legs")
+}
+
+model ReferenceRateSnapshot {
+  id                 String                       @id @default(uuid()) @db.Uuid
+  routeId            String                       @map("route_id") @db.Uuid
+  route              ConversionRoute              @relation(fields: [routeId], references: [id], onDelete: Restrict)
+  rate               Decimal?                     @db.Decimal(60, 30)
+  outputScale        Int                          @map("output_scale")
+  roundingMode       RateRoundingMode             @map("rounding_mode")
+  status             ReferenceRateStatus
+  rejectionReason    String?                      @map("rejection_reason") @db.VarChar(100)
+  calculatedAt       DateTime                     @map("calculated_at") @db.Timestamptz(6)
+  validUntil         DateTime?                    @map("valid_until") @db.Timestamptz(6)
+  inputs             ReferenceRateSnapshotInput[]
+  guardObservationId String?                      @map("guard_observation_id") @db.Uuid
+  guardObservation   PriceObservation?            @relation("SnapshotGuardObservation", fields: [guardObservationId], references: [id], onDelete: Restrict)
+  createdAt          DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([routeId, status, calculatedAt])
+  @@map("reference_rate_snapshots")
+}
+
+model ReferenceRateSnapshotInput {
+  snapshotId    String                @map("snapshot_id") @db.Uuid
+  snapshot      ReferenceRateSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  routeLegId    String                @map("route_leg_id") @db.Uuid
+  routeLeg      ConversionRouteLeg    @relation(fields: [routeLegId], references: [id], onDelete: Restrict)
+  observationId String                @map("observation_id") @db.Uuid
+  observation   PriceObservation      @relation(fields: [observationId], references: [id], onDelete: Restrict)
+  createdAt     DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([snapshotId, routeLegId])
+  @@map("reference_rate_snapshot_inputs")
+}
+
+model ManualPriceVersion {
+  id                     String               @id @default(uuid()) @db.Uuid
+  providerPricePairId    String               @map("provider_price_pair_id") @db.Uuid
+  providerPricePair      ProviderPricePair    @relation(fields: [providerPricePairId], references: [id], onDelete: Restrict)
+  version                Int
+  rawRate                String               @map("raw_rate") @db.VarChar(160)
+  normalizedRate         Decimal              @map("normalized_rate") @db.Decimal(60, 30)
+  effectiveFrom          DateTime             @map("effective_from") @db.Timestamptz(6)
+  effectiveUntil         DateTime?            @map("effective_until") @db.Timestamptz(6)
+  actorId                String               @map("actor_id") @db.VarChar(100)
+  reason                 String               @db.VarChar(500)
+  configurationVersionId Int                  @map("configuration_version_id")
+  configurationVersion   ConfigurationVersion @relation(fields: [configurationVersionId], references: [id], onDelete: Restrict)
+  createdAt              DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([providerPricePairId, version])
+  @@index([providerPricePairId, effectiveFrom])
+  @@map("manual_price_versions")
 }
 
 model ConfigurationAuditLog {

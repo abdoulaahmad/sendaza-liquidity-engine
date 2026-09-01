@@ -227,6 +227,24 @@ export interface ProviderPairIngestionPolicy {
   readonly sequenceEnforced: boolean;
 }
 
+export type PriceProviderKind = 'COINBASE_PUBLIC' | 'MANUAL' | 'DETERMINISTIC_FAKE';
+
+export interface ProviderPairSource extends ProviderPairIngestionPolicy {
+  readonly providerPairCode: string;
+  readonly providerKind: PriceProviderKind;
+}
+
+export abstract class PriceProviderResolver {
+  abstract resolve(kind: PriceProviderKind): PriceProvider | null;
+}
+
+export interface MarketRefreshResult {
+  readonly marketId: string;
+  readonly snapshotId: string;
+  readonly evaluation: ReferenceRateEvaluation;
+  readonly providerFailures: number;
+}
+
 export type ObservationIngestionResult =
   | { readonly status: 'INSERTED'; readonly observationId: string }
   | { readonly status: 'DUPLICATE'; readonly observationId: string }
@@ -248,6 +266,9 @@ export abstract class PricingRepository {
     providerPairCode: string,
     at: Date,
   ): Promise<ActiveManualPrice | null>;
+  abstract findProviderPairSources(
+    providerPairIds: readonly string[],
+  ): Promise<readonly ProviderPairSource[]>;
   abstract insertObservation(
     observation: NewPriceObservation,
   ): Promise<{ readonly id: string; readonly inserted: boolean }>;
@@ -263,6 +284,62 @@ export abstract class PricingRepository {
     providerSequence: string,
   ): Promise<StoredPriceObservation | null>;
   abstract saveEvaluation(evaluation: ReferenceRateEvaluation): Promise<string>;
+}
+
+export class MarketDataRefreshService {
+  private readonly ingestion: ObservationIngestionService;
+
+  constructor(
+    private readonly repository: PricingRepository,
+    private readonly providers: PriceProviderResolver,
+    private readonly now: () => Date = () => new Date(),
+  ) {
+    this.ingestion = new ObservationIngestionService(repository);
+  }
+
+  async refreshMarket(marketId: string): Promise<MarketRefreshResult> {
+    const route = await this.repository.findEnabledRoute(marketId);
+    if (!route) throw new PriceProviderError('PRICE_OBSERVATION_INVALID');
+    const pairIds = uniqueRoutePairIds(route);
+    const sources = await this.repository.findProviderPairSources(pairIds);
+    let providerFailures = pairIds.length - sources.length;
+
+    for (const source of sources) {
+      const provider = this.providers.resolve(source.providerKind);
+      if (!provider) {
+        providerFailures += 1;
+        continue;
+      }
+      let input: PriceObservationInput;
+      try {
+        input = await provider.fetch({ providerPairCode: source.providerPairCode });
+      } catch {
+        providerFailures += 1;
+        continue;
+      }
+      try {
+        await this.ingestion.ingest(source, input, this.now());
+      } catch (error: unknown) {
+        if (!(error instanceof PriceProviderError)) throw error;
+        providerFailures += 1;
+      }
+    }
+
+    const observations = await this.repository.findLatestObservations(pairIds);
+    const previous = await this.repository.findPreviousAcceptedRate(route.id);
+    const evaluation = evaluateReferenceRate(route, observations, this.now(), previous ?? undefined);
+    const snapshotId = await this.repository.saveEvaluation(evaluation);
+    return { marketId, snapshotId, evaluation, providerFailures };
+  }
+}
+
+function uniqueRoutePairIds(route: ConversionRouteDefinition): readonly string[] {
+  return [
+    ...new Set([
+      ...route.legs.map((leg) => leg.providerPairId),
+      ...(route.stablecoinGuard ? [route.stablecoinGuard.providerPairId] : []),
+    ]),
+  ];
 }
 
 export class ObservationIngestionService {

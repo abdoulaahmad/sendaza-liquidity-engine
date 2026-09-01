@@ -10,6 +10,7 @@ describe('PrismaPricingRepository', () => {
   const observationFindFirst = jest.fn();
   const snapshotFindFirst = jest.fn();
   const manualPriceFindFirst = jest.fn();
+  const providerPairFindMany = jest.fn();
   const snapshotCreate = jest.fn();
   const inputCreateMany = jest.fn();
   const transaction = jest.fn(async (work: (client: unknown) => Promise<unknown>) =>
@@ -27,6 +28,7 @@ describe('PrismaPricingRepository', () => {
     },
     referenceRateSnapshot: { findFirst: snapshotFindFirst },
     manualPriceVersion: { findFirst: manualPriceFindFirst },
+    providerPricePair: { findMany: providerPairFindMany },
     $transaction: transaction,
   } as unknown as PrismaService;
   const repository = new PrismaPricingRepository(prisma);
@@ -183,6 +185,28 @@ describe('PrismaPricingRepository', () => {
     expect(manualPriceFindFirst.mock.calls[0]?.[0].where.providerPricePair.provider.type).toBe(
       'MANUAL',
     );
+  });
+
+  it('loads enabled provider sources without vendor configuration', async () => {
+    providerPairFindMany.mockResolvedValue([
+      {
+        id: 'pair-1',
+        providerPairCode: 'ETH-USDT',
+        priceScale: 8,
+        sequenceEnforced: false,
+        provider: { type: 'COINBASE_PUBLIC' },
+      },
+    ]);
+    await expect(repository.findProviderPairSources(['pair-1', 'pair-1'])).resolves.toEqual([
+      {
+        id: 'pair-1',
+        providerPairCode: 'ETH-USDT',
+        priceScale: 8,
+        sequenceEnforced: false,
+        providerKind: 'COINBASE_PUBLIC',
+      },
+    ]);
+    expect(providerPairFindMany.mock.calls[0]?.[0].where.id.in).toEqual(['pair-1']);
   });
 
   it('stores an accepted snapshot and all evidence in one transaction', async () => {

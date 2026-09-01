@@ -6,6 +6,7 @@ import {
   PriceProviderError,
   PreviousAcceptedRate,
   PricingRepository,
+  ProviderPairSource,
   ReferenceRateEvaluation,
   StoredPriceObservation,
 } from '../../domain/src';
@@ -133,6 +134,33 @@ export class PrismaPricingRepository implements PricingRepository {
           version: version.version,
         }
       : null;
+  }
+
+  async findProviderPairSources(
+    providerPairIds: readonly string[],
+  ): Promise<readonly ProviderPairSource[]> {
+    if (providerPairIds.length === 0) return [];
+    const pairs = await this.prisma.providerPricePair.findMany({
+      where: {
+        id: { in: [...new Set(providerPairIds)] },
+        status: 'ENABLED',
+        provider: { status: 'ENABLED' },
+      },
+      select: {
+        id: true,
+        providerPairCode: true,
+        priceScale: true,
+        sequenceEnforced: true,
+        provider: { select: { type: true } },
+      },
+    });
+    return pairs.map((pair) => ({
+      id: pair.id,
+      providerPairCode: pair.providerPairCode,
+      priceScale: pair.priceScale,
+      sequenceEnforced: pair.sequenceEnforced,
+      providerKind: pair.provider.type,
+    }));
   }
 
   async insertObservation(

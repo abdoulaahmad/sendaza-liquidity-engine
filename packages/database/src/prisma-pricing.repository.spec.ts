@@ -8,6 +8,7 @@ describe('PrismaPricingRepository', () => {
   const observationFindMany = jest.fn();
   const observationCreate = jest.fn();
   const snapshotFindFirst = jest.fn();
+  const manualPriceFindFirst = jest.fn();
   const snapshotCreate = jest.fn();
   const inputCreateMany = jest.fn();
   const transaction = jest.fn(async (work: (client: unknown) => Promise<unknown>) =>
@@ -20,6 +21,7 @@ describe('PrismaPricingRepository', () => {
     conversionRoute: { findFirst: routeFindFirst },
     priceObservation: { findMany: observationFindMany, create: observationCreate },
     referenceRateSnapshot: { findFirst: snapshotFindFirst },
+    manualPriceVersion: { findFirst: manualPriceFindFirst },
     $transaction: transaction,
   } as unknown as PrismaService;
   const repository = new PrismaPricingRepository(prisma);
@@ -106,6 +108,25 @@ describe('PrismaPricingRepository', () => {
     ).resolves.toBe('observation-1');
     expect(observationCreate).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ normalizedRate: '1600.12' }) }),
+    );
+  });
+
+  it('loads only the active reviewed manual price version', async () => {
+    const effectiveFrom = new Date('2026-09-01T09:00:00.000Z');
+    manualPriceFindFirst.mockResolvedValue({
+      normalizedRate: decimal('1600.250000000000000000000000000000'),
+      effectiveFrom,
+      version: 7,
+    });
+    await expect(
+      repository.findActiveManualPrice('USD-NGN', new Date('2026-09-01T12:00:00.000Z')),
+    ).resolves.toEqual({
+      rate: '1600.250000000000000000000000000000',
+      effectiveFrom,
+      version: 7,
+    });
+    expect(manualPriceFindFirst.mock.calls[0]?.[0].where.providerPricePair.provider.type).toBe(
+      'MANUAL',
     );
   });
 

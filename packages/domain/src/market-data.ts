@@ -20,6 +20,15 @@ export interface PriceProvider {
   fetch(request: PriceRequest): Promise<PriceObservationInput>;
 }
 
+export class PriceProviderError extends Error {
+  constructor(
+    readonly code: 'PRICE_PROVIDER_UNAVAILABLE' | 'PRICE_OBSERVATION_INVALID',
+  ) {
+    super(code);
+    this.name = 'PriceProviderError';
+  }
+}
+
 export interface PriceRequest {
   readonly providerPairCode: string;
 }
@@ -208,12 +217,22 @@ export interface NewPriceObservation {
   readonly receivedAt: Date;
 }
 
+export interface ActiveManualPrice {
+  readonly rate: string;
+  readonly effectiveFrom: Date;
+  readonly version: number;
+}
+
 export abstract class PricingRepository {
   abstract findEnabledRoute(marketId: string): Promise<ConversionRouteDefinition | null>;
   abstract findLatestObservations(
     providerPairIds: readonly string[],
   ): Promise<readonly StoredPriceObservation[]>;
   abstract findPreviousAcceptedRate(routeId: string): Promise<PreviousAcceptedRate | null>;
+  abstract findActiveManualPrice(
+    providerPairCode: string,
+    at: Date,
+  ): Promise<ActiveManualPrice | null>;
   abstract insertObservation(observation: NewPriceObservation): Promise<string>;
   abstract saveEvaluation(evaluation: ReferenceRateEvaluation): Promise<string>;
 }

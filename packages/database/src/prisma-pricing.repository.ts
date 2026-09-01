@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
   ConversionRouteDefinition,
+  ActiveManualPrice,
   NewPriceObservation,
   PreviousAcceptedRate,
   PricingRepository,
@@ -98,6 +99,32 @@ export class PrismaPricingRepository implements PricingRepository {
       select: { rate: true },
     });
     return snapshot?.rate ? { rate: snapshot.rate.toFixed() } : null;
+  }
+
+  async findActiveManualPrice(
+    providerPairCode: string,
+    at: Date,
+  ): Promise<ActiveManualPrice | null> {
+    const version = await this.prisma.manualPriceVersion.findFirst({
+      where: {
+        providerPricePair: {
+          providerPairCode,
+          status: 'ENABLED',
+          provider: { type: 'MANUAL', status: 'ENABLED' },
+        },
+        effectiveFrom: { lte: at },
+        OR: [{ effectiveUntil: null }, { effectiveUntil: { gt: at } }],
+      },
+      orderBy: { version: 'desc' },
+      select: { normalizedRate: true, effectiveFrom: true, version: true },
+    });
+    return version
+      ? {
+          rate: version.normalizedRate.toFixed(),
+          effectiveFrom: version.effectiveFrom,
+          version: version.version,
+        }
+      : null;
   }
 
   async insertObservation(observation: NewPriceObservation): Promise<string> {

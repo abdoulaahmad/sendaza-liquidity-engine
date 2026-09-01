@@ -85,6 +85,8 @@ export interface RejectedReferenceRate {
   readonly routeId: string;
   readonly routeVersion: number;
   readonly failureCode: MarketDataFailureCode;
+  readonly outputScale: number;
+  readonly roundingMode: 'HALF_EVEN';
   readonly calculatedAt: Date;
   readonly inputs: readonly ReferenceRateInput[];
   readonly guardObservationId?: string;
@@ -112,6 +114,8 @@ export function evaluateReferenceRate(
     routeId: route.id,
     routeVersion: route.version,
     failureCode,
+    outputScale: route.outputScale,
+    roundingMode: 'HALF_EVEN',
     calculatedAt,
     inputs,
     ...(guardObservationId ? { guardObservationId } : {}),
@@ -191,6 +195,27 @@ export function evaluateReferenceRate(
     inputs,
     ...(guardObservationId ? { guardObservationId } : {}),
   };
+}
+
+export interface NewPriceObservation {
+  readonly providerPairId: string;
+  readonly normalizedRate: string;
+  readonly rawRate: string;
+  readonly providerObservedAt: Date;
+  readonly providerSequence?: string;
+  readonly deduplicationKey: string;
+  readonly safeProviderReference?: string;
+  readonly receivedAt: Date;
+}
+
+export abstract class PricingRepository {
+  abstract findEnabledRoute(marketId: string): Promise<ConversionRouteDefinition | null>;
+  abstract findLatestObservations(
+    providerPairIds: readonly string[],
+  ): Promise<readonly StoredPriceObservation[]>;
+  abstract findPreviousAcceptedRate(routeId: string): Promise<PreviousAcceptedRate | null>;
+  abstract insertObservation(observation: NewPriceObservation): Promise<string>;
+  abstract saveEvaluation(evaluation: ReferenceRateEvaluation): Promise<string>;
 }
 
 function selectLatestByPair(

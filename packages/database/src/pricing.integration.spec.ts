@@ -178,6 +178,36 @@ describe('pricing PostgreSQL integration', () => {
     expect(currentClaims).toHaveLength(1);
   });
 
+  it('reclaims an expired lease after a worker restart', async () => {
+    const crashedLeaseToken = randomUUID();
+    const restartedLeaseToken = randomUUID();
+    const restartedAt = new Date();
+    await prisma.pricingRefreshJob.update({
+      where: { id: ids.job },
+      data: {
+        status: 'LEASED',
+        leaseToken: crashedLeaseToken,
+        leaseExpiresAt: new Date(restartedAt.getTime() - 1_000),
+      },
+    });
+
+    const claims = await jobs.claimBatch({
+      limit: 100,
+      leaseSeconds: 30,
+      leaseToken: restartedLeaseToken,
+      now: restartedAt,
+    });
+    const reclaimed = claims.find((claim) => claim.marketId === ids.market);
+
+    expect(reclaimed).toMatchObject({
+      id: ids.job,
+      marketId: ids.market,
+      leaseToken: restartedLeaseToken,
+      attemptCount: 2,
+    });
+    expect(reclaimed?.leaseExpiresAt).toEqual(new Date(restartedAt.getTime() + 30_000));
+  });
+
   it('commits a snapshot and its exact input atomically', async () => {
     const calculatedAt = new Date();
     const snapshotId = await pricing.saveEvaluation({

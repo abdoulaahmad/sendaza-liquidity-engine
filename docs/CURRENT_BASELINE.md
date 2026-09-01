@@ -30,6 +30,7 @@ This index identifies the canonical decisions for the Sendaza-only, free-first M
 | [ROADMAP.md](./ROADMAP.md) | Delivery phases |
 | [METHODOLOGY.md](./METHODOLOGY.md) | Canonical delivery methodology and release gates |
 | [SPRINT_PLAN.md](./SPRINT_PLAN.md) | Canonical two-week sprint sequence and demonstrations |
+| [SENDAZA_ENGINEERING_HANDOFF.md](./SENDAZA_ENGINEERING_HANDOFF.md) | Sendaza integration ownership, required changes, and readiness checklist |
 
 ## Terminology Corrections
 

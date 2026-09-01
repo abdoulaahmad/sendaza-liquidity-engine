@@ -3,6 +3,7 @@ import {
   ConversionRouteDefinition,
   ActiveManualPrice,
   NewPriceObservation,
+  PriceProviderError,
   PreviousAcceptedRate,
   PricingRepository,
   ReferenceRateEvaluation,
@@ -79,6 +80,8 @@ export class PrismaPricingRepository implements PricingRepository {
         normalizedRate: true,
         providerObservedAt: true,
         providerSequence: true,
+        sequenceGap: true,
+        deduplicationKey: true,
         providerPricePair: { select: { priceScale: true, maxAgeSeconds: true } },
       },
     });
@@ -89,6 +92,11 @@ export class PrismaPricingRepository implements PricingRepository {
       priceScale: observation.providerPricePair.priceScale,
       pairMaxAgeSeconds: observation.providerPricePair.maxAgeSeconds,
       observedAt: observation.providerObservedAt,
+      ...(observation.providerSequence
+        ? { providerSequence: observation.providerSequence }
+        : {}),
+      deduplicationKey: observation.deduplicationKey,
+      sequenceGap: observation.sequenceGap,
     }));
   }
 
@@ -127,25 +135,65 @@ export class PrismaPricingRepository implements PricingRepository {
       : null;
   }
 
-  async insertObservation(observation: NewPriceObservation): Promise<string> {
-    const created = await this.prisma.priceObservation.create({
-      data: {
-        providerPricePairId: observation.providerPairId,
-        normalizedRate: observation.normalizedRate,
-        rawRate: observation.rawRate,
-        providerObservedAt: observation.providerObservedAt,
-        deduplicationKey: observation.deduplicationKey,
-        receivedAt: observation.receivedAt,
-        ...(observation.providerSequence
-          ? { providerSequence: observation.providerSequence }
-          : {}),
-        ...(observation.safeProviderReference
-          ? { safeProviderReference: observation.safeProviderReference }
-          : {}),
-      },
-      select: { id: true },
+  async insertObservation(
+    observation: NewPriceObservation,
+  ): Promise<{ readonly id: string; readonly inserted: boolean }> {
+    try {
+      const created = await this.prisma.priceObservation.create({
+        data: {
+          providerPricePairId: observation.providerPairId,
+          normalizedRate: observation.normalizedRate,
+          rawRate: observation.rawRate,
+          providerObservedAt: observation.providerObservedAt,
+          deduplicationKey: observation.deduplicationKey,
+          receivedAt: observation.receivedAt,
+          ...(observation.providerSequence
+            ? { providerSequence: observation.providerSequence }
+            : {}),
+          ...(observation.sequenceGap ? { sequenceGap: true } : {}),
+          ...(observation.safeProviderReference
+            ? { safeProviderReference: observation.safeProviderReference }
+            : {}),
+        },
+        select: { id: true },
+      });
+      return { id: created.id, inserted: true };
+    } catch (error: unknown) {
+      if (!isUniqueConstraintError(error)) throw error;
+      const duplicate = await this.findObservationByDeduplicationKey(
+        observation.providerPairId,
+        observation.deduplicationKey,
+      );
+      if (duplicate) return { id: duplicate.id, inserted: false };
+      throw new PriceProviderError('PRICE_OBSERVATION_INVALID');
+    }
+  }
+
+  async findLatestObservationForPair(
+    providerPairId: string,
+  ): Promise<StoredPriceObservation | null> {
+    return this.findOneObservation({
+      where: { providerPricePairId: providerPairId },
+      orderBy: { providerObservedAt: 'desc' },
     });
-    return created.id;
+  }
+
+  async findObservationByDeduplicationKey(
+    providerPairId: string,
+    deduplicationKey: string,
+  ): Promise<StoredPriceObservation | null> {
+    return this.findOneObservation({
+      where: { providerPricePairId: providerPairId, deduplicationKey },
+    });
+  }
+
+  async findObservationByProviderSequence(
+    providerPairId: string,
+    providerSequence: string,
+  ): Promise<StoredPriceObservation | null> {
+    return this.findOneObservation({
+      where: { providerPricePairId: providerPairId, providerSequence },
+    });
   }
 
   async saveEvaluation(evaluation: ReferenceRateEvaluation): Promise<string> {
@@ -178,4 +226,46 @@ export class PrismaPricingRepository implements PricingRepository {
       return snapshot.id;
     });
   }
+
+  private async findOneObservation(query: {
+    where: {
+      providerPricePairId: string;
+      deduplicationKey?: string;
+      providerSequence?: string;
+    };
+    orderBy?: { providerObservedAt: 'desc' };
+  }): Promise<StoredPriceObservation | null> {
+    const observation = await this.prisma.priceObservation.findFirst({
+      ...query,
+      select: {
+        id: true,
+        providerPricePairId: true,
+        normalizedRate: true,
+        providerObservedAt: true,
+        providerSequence: true,
+        sequenceGap: true,
+        deduplicationKey: true,
+        providerPricePair: { select: { priceScale: true, maxAgeSeconds: true } },
+      },
+    });
+    return observation
+      ? {
+          id: observation.id,
+          providerPairId: observation.providerPricePairId,
+          rate: observation.normalizedRate.toFixed(),
+          priceScale: observation.providerPricePair.priceScale,
+          pairMaxAgeSeconds: observation.providerPricePair.maxAgeSeconds,
+          observedAt: observation.providerObservedAt,
+          ...(observation.providerSequence
+            ? { providerSequence: observation.providerSequence }
+            : {}),
+          deduplicationKey: observation.deduplicationKey,
+          sequenceGap: observation.sequenceGap,
+        }
+      : null;
+  }
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002';
 }

@@ -1,4 +1,5 @@
 import Decimal from 'decimal.js';
+import { createHash } from 'node:crypto';
 
 const RATE_PATTERN = /^(0|[1-9][0-9]*)(\.[0-9]+)?$/;
 const RateDecimal = Decimal.clone({ precision: 80, rounding: Decimal.ROUND_HALF_EVEN });
@@ -46,6 +47,8 @@ export interface StoredPriceObservation {
   readonly priceScale: number;
   readonly pairMaxAgeSeconds: number;
   readonly observedAt: Date;
+  readonly providerSequence?: string;
+  readonly deduplicationKey?: string;
   readonly sequenceGap?: boolean;
 }
 
@@ -212,10 +215,22 @@ export interface NewPriceObservation {
   readonly rawRate: string;
   readonly providerObservedAt: Date;
   readonly providerSequence?: string;
+  readonly sequenceGap?: boolean;
   readonly deduplicationKey: string;
   readonly safeProviderReference?: string;
   readonly receivedAt: Date;
 }
+
+export interface ProviderPairIngestionPolicy {
+  readonly id: string;
+  readonly priceScale: number;
+  readonly sequenceEnforced: boolean;
+}
+
+export type ObservationIngestionResult =
+  | { readonly status: 'INSERTED'; readonly observationId: string }
+  | { readonly status: 'DUPLICATE'; readonly observationId: string }
+  | { readonly status: 'SEQUENCE_GAP'; readonly observationId: string };
 
 export interface ActiveManualPrice {
   readonly rate: string;
@@ -233,8 +248,110 @@ export abstract class PricingRepository {
     providerPairCode: string,
     at: Date,
   ): Promise<ActiveManualPrice | null>;
-  abstract insertObservation(observation: NewPriceObservation): Promise<string>;
+  abstract insertObservation(
+    observation: NewPriceObservation,
+  ): Promise<{ readonly id: string; readonly inserted: boolean }>;
+  abstract findLatestObservationForPair(
+    providerPairId: string,
+  ): Promise<StoredPriceObservation | null>;
+  abstract findObservationByDeduplicationKey(
+    providerPairId: string,
+    deduplicationKey: string,
+  ): Promise<StoredPriceObservation | null>;
+  abstract findObservationByProviderSequence(
+    providerPairId: string,
+    providerSequence: string,
+  ): Promise<StoredPriceObservation | null>;
   abstract saveEvaluation(evaluation: ReferenceRateEvaluation): Promise<string>;
+}
+
+export class ObservationIngestionService {
+  constructor(private readonly repository: PricingRepository) {}
+
+  async ingest(
+    policy: ProviderPairIngestionPolicy,
+    input: PriceObservationInput,
+    receivedAt: Date,
+  ): Promise<ObservationIngestionResult> {
+    this.validate(policy, input, receivedAt);
+    const deduplicationKey = createObservationDeduplicationKey(policy.id, input);
+    const duplicate = await this.repository.findObservationByDeduplicationKey(
+      policy.id,
+      deduplicationKey,
+    );
+    if (duplicate) return { status: 'DUPLICATE', observationId: duplicate.id };
+
+    let sequenceGap = false;
+    if (policy.sequenceEnforced) {
+      const sequence = input.providerSequence!;
+      const existingSequence = await this.repository.findObservationByProviderSequence(
+        policy.id,
+        sequence,
+      );
+      if (existingSequence) throw new PriceProviderError('PRICE_OBSERVATION_INVALID');
+      const previous = await this.repository.findLatestObservationForPair(policy.id);
+      if (previous?.providerSequence) {
+        sequenceGap = BigInt(sequence) !== BigInt(previous.providerSequence) + 1n;
+      }
+    }
+
+    const persisted = await this.repository.insertObservation({
+      providerPairId: policy.id,
+      normalizedRate: input.price,
+      rawRate: input.price,
+      providerObservedAt: input.observedAt,
+      ...(input.providerSequence ? { providerSequence: input.providerSequence } : {}),
+      ...(sequenceGap ? { sequenceGap: true } : {}),
+      deduplicationKey,
+      receivedAt,
+    });
+    if (!persisted.inserted) return { status: 'DUPLICATE', observationId: persisted.id };
+    return {
+      status: sequenceGap ? 'SEQUENCE_GAP' : 'INSERTED',
+      observationId: persisted.id,
+    };
+  }
+
+  private validate(
+    policy: ProviderPairIngestionPolicy,
+    input: PriceObservationInput,
+    receivedAt: Date,
+  ): void {
+    const fractionLength = input.price.split('.')[1]?.length ?? 0;
+    if (
+      !policy.id ||
+      !Number.isInteger(policy.priceScale) ||
+      policy.priceScale < 0 ||
+      policy.priceScale > 30 ||
+      !isPositiveRate(input.price) ||
+      fractionLength > policy.priceScale ||
+      !isValidDate(input.observedAt) ||
+      !isValidDate(receivedAt) ||
+      input.observedAt.getTime() > receivedAt.getTime() + 5 * 60 * 1000 ||
+      (policy.sequenceEnforced && !isPositiveInteger(input.providerSequence))
+    ) {
+      throw new PriceProviderError('PRICE_OBSERVATION_INVALID');
+    }
+  }
+}
+
+export function createObservationDeduplicationKey(
+  providerPairId: string,
+  input: PriceObservationInput,
+): string {
+  return createHash('sha256')
+    .update(providerPairId)
+    .update('\n')
+    .update(input.price)
+    .update('\n')
+    .update(input.observedAt.toISOString())
+    .update('\n')
+    .update(input.providerSequence ?? '')
+    .digest('hex');
+}
+
+function isPositiveInteger(value: string | undefined): value is string {
+  return typeof value === 'string' && /^[1-9][0-9]*$/.test(value);
 }
 
 function selectLatestByPair(

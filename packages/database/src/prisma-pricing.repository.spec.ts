@@ -7,6 +7,7 @@ describe('PrismaPricingRepository', () => {
   const routeFindFirst = jest.fn();
   const observationFindMany = jest.fn();
   const observationCreate = jest.fn();
+  const observationFindFirst = jest.fn();
   const snapshotFindFirst = jest.fn();
   const manualPriceFindFirst = jest.fn();
   const snapshotCreate = jest.fn();
@@ -19,7 +20,11 @@ describe('PrismaPricingRepository', () => {
   );
   const prisma = {
     conversionRoute: { findFirst: routeFindFirst },
-    priceObservation: { findMany: observationFindMany, create: observationCreate },
+    priceObservation: {
+      findMany: observationFindMany,
+      findFirst: observationFindFirst,
+      create: observationCreate,
+    },
     referenceRateSnapshot: { findFirst: snapshotFindFirst },
     manualPriceVersion: { findFirst: manualPriceFindFirst },
     $transaction: transaction,
@@ -74,6 +79,8 @@ describe('PrismaPricingRepository', () => {
         normalizedRate: decimal('1600.120000000000000000000000000000'),
         providerObservedAt: observedAt,
         providerSequence: null,
+        sequenceGap: false,
+        deduplicationKey: 'dedupe-1',
         providerPricePair: { priceScale: 2, maxAgeSeconds: 60 },
       },
     ]);
@@ -86,6 +93,8 @@ describe('PrismaPricingRepository', () => {
         priceScale: 2,
         pairMaxAgeSeconds: 60,
         observedAt,
+        deduplicationKey: 'dedupe-1',
+        sequenceGap: false,
       },
     ]);
     expect(observationFindMany.mock.calls[0]?.[0].where.providerPricePairId.in).toEqual(['pair-1']);
@@ -105,10 +114,56 @@ describe('PrismaPricingRepository', () => {
         deduplicationKey: 'dedupe-1',
         receivedAt,
       }),
-    ).resolves.toBe('observation-1');
+    ).resolves.toEqual({ id: 'observation-1', inserted: true });
     expect(observationCreate).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ normalizedRate: '1600.12' }) }),
     );
+  });
+
+  it('resolves a concurrent exact duplicate after PostgreSQL uniqueness wins', async () => {
+    observationCreate.mockRejectedValue({ code: 'P2002' });
+    observationFindFirst.mockResolvedValue({
+      id: 'observation-existing',
+      providerPricePairId: 'pair-1',
+      normalizedRate: decimal('1600.25'),
+      providerObservedAt: new Date('2026-09-01T10:00:00.000Z'),
+      providerSequence: '7',
+      sequenceGap: false,
+      deduplicationKey: 'dedupe-1',
+      providerPricePair: { priceScale: 2, maxAgeSeconds: 60 },
+    });
+    await expect(
+      repository.insertObservation({
+        providerPairId: 'pair-1',
+        normalizedRate: '1600.25',
+        rawRate: '1600.25',
+        providerObservedAt: new Date('2026-09-01T10:00:00.000Z'),
+        providerSequence: '7',
+        deduplicationKey: 'dedupe-1',
+        receivedAt: new Date('2026-09-01T10:00:01.000Z'),
+      }),
+    ).resolves.toEqual({ id: 'observation-existing', inserted: false });
+  });
+
+  it('loads sequence evidence needed by ingestion', async () => {
+    observationFindFirst.mockResolvedValue({
+      id: 'observation-1',
+      providerPricePairId: 'pair-1',
+      normalizedRate: decimal('1600.25'),
+      providerObservedAt: new Date('2026-09-01T10:00:00.000Z'),
+      providerSequence: '7',
+      sequenceGap: true,
+      deduplicationKey: 'dedupe-1',
+      providerPricePair: { priceScale: 2, maxAgeSeconds: 60 },
+    });
+    await expect(repository.findLatestObservationForPair('pair-1')).resolves.toMatchObject({
+      providerSequence: '7',
+      sequenceGap: true,
+      deduplicationKey: 'dedupe-1',
+    });
+    expect(observationFindFirst.mock.calls[0]?.[0].orderBy).toEqual({
+      providerObservedAt: 'desc',
+    });
   });
 
   it('loads only the active reviewed manual price version', async () => {

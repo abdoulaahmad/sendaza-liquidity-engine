@@ -225,6 +225,7 @@ model PriceObservation {
   rawRate               String                       @map("raw_rate") @db.VarChar(160)
   providerObservedAt    DateTime                     @map("provider_observed_at") @db.Timestamptz(6)
   providerSequence      String?                      @map("provider_sequence") @db.VarChar(100)
+  sequenceGap           Boolean                      @default(false) @map("sequence_gap")
   deduplicationKey      String                       @map("deduplication_key") @db.VarChar(200)
   safeProviderReference String?                      @map("safe_provider_reference") @db.VarChar(200)
   receivedAt            DateTime                     @map("received_at") @db.Timestamptz(6)

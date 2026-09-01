@@ -130,3 +130,24 @@ does not infer stability from an asset symbol.
 The free MVP may demonstrate Coinbase public reference prices plus a reviewed,
 versioned manual fiat cross-rate. This single-source design is test-only.
 Independent redundant production pricing remains a mainnet launch gate.
+
+## ADR-009: Purchase Quotes Use Total Debit and Versioned Economics
+
+**Decision:** Proposed for Sprint 4 review
+
+A BUY quote request supplies the exact total fiat debit. SLE deducts the
+versioned fixed and percentage purchase fees, converts the remaining trade
+amount using the spread-adjusted reference rate, and returns the exact crypto
+destination amount.
+
+Percentage fees round upward to fiat atomic units. Destination crypto rounds
+downward to asset atomic units. The customer principal is never silently
+rounded. Quote amounts, rates, fee components, spread, scales, rounding rules,
+reference snapshot, policy version, configuration version, and expiry are
+stored as immutable evidence.
+
+Order minimum and maximum apply to total debit. Quote expiry cannot exceed the
+source reference snapshot expiry. Quote creation does not reserve inventory;
+Sprint 6 performs reservation after Sendaza locks the exact quoted debit.
+
+Canonical details: [modules/quote-engine/MODULE.md](./modules/quote-engine/MODULE.md)

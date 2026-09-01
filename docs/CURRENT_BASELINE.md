@@ -9,7 +9,8 @@ This index identifies the canonical decisions for the Sendaza-only, free-first M
 3. SLE has no customer-facing frontend.
 4. The free MVP has no graphical SLE operations console.
 5. A restricted operations console is introduced only after core workflows are validated.
-6. The MVP uses Vercel Functions, Neon Free, Alchemy Sepolia, and an MPC custody-provider sandbox.
+6. The MVP uses Railway API and worker services, Railway PostgreSQL, Alchemy
+   Sepolia, and an MPC custody-provider sandbox.
 7. The free MVP cannot hold real customer funds or mainnet keys.
 8. SLE owns configurable crypto/fiat pricing routes, spreads, purchase fees, executable quotes, treasury reservations, MPC custody, and withdrawals.
 9. Assets, fiat currencies, networks, markets, and providers remain configuration-driven; ETH and NGN are examples, not hardcoded scope.

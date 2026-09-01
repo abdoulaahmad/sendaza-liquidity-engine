@@ -1,24 +1,33 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><title>SLE Sprint 3</title><link rel="stylesheet" href="report.css"></head><body><main>
-<p class="eyebrow">Sendaza Liquidity Engine</p><h1>Sprint 3: Market Data and Conversion Routes</h1><p class="subtitle">How SLE turns provider facts into auditable reference rates</p><p class="status progress">In progress</p>
-<div class="note warning"><strong>Starting status:</strong> the module specification and pricing architecture decision are established. Database schema, adapters, evaluation logic, worker refresh, safety guards, and test evidence are not implemented yet.</div>
-<h2>What Came Before</h2><p>Sprint 1 taught SLE which assets, fiat currencies, networks, and markets exist. Sprint 2 made private requests and background events authenticated, retry-safe, and durable. Sprint 3 can now collect market facts without hardcoding ETH, USDT, USD, or NGN.</p>
-<h2>Goal in Simple Terms</h2><p>A provider may tell SLE that one ETH is worth a number of USDT. Another source may describe USDT in USD, and a reviewed manual version may describe USD in NGN for the free sandbox. Sprint 3 stores each fact and follows a configured recipe to calculate a reference rate such as ETH/NGN.</p>
-<h2>The Three Main Records</h2><table><tr><th>Record</th><th>Junior-friendly meaning</th></tr><tr><td>Observation</td><td>One immutable provider fact with its price and time.</td></tr><tr><td>Conversion route</td><td>An ordered recipe saying which pairs to multiply or divide.</td></tr><tr><td>Reference snapshot</td><td>The calculated result plus links to every observation used.</td></tr></table>
-<h2>Example Flow</h2><pre class="flow">Coinbase: ETH/USDT observation
-          | multiply
-Stablecoin guard: USDT/USD observation
-          | multiply
-Manual version: USD/NGN observation
-          v
-Configured ETH/NGN reference snapshot
-          |
-          v
-Sprint 4 quote engine adds spread and purchase fee</pre>
-<div class="note"><strong>Important boundary:</strong> Sprint 3 does not create a customer quote. It produces a reference rate. Sprint 4 owns the customer rate, spread, fees, limits, and expiry.</div>
-<h2>Exact Arithmetic</h2><p>Provider prices enter as decimal strings. Route math uses <code>decimal.js</code>, never JavaScript floating point. Intermediate legs retain working precision. The final rate is normalized once to a configured scale using recorded half-even rounding. Customer principal is not rounded here.</p>
-<h2>Safety Checks</h2><ul><li><strong>Staleness:</strong> old or missing observations cannot price a route.</li><li><strong>Deviation:</strong> an unexpectedly large move from the last accepted snapshot is rejected.</li><li><strong>Sequence gap:</strong> missing or backwards provider sequences make the pair unsafe.</li><li><strong>Stablecoin guard:</strong> a configured stablecoin must remain inside its explicit reference-fiat band.</li></ul><p>SLE never assumes an asset is stable merely because its symbol is USDT or USDC.</p>
-<h2>System Link</h2><p>Provider adapters remain behind a domain interface. PostgreSQL stores evidence and route versions. The worker refreshes observations and snapshots. Sprint 4 receives an accepted snapshot ID, while later reconciliation can reproduce exactly which source facts supported a quote.</p>
-<h2>Free MVP Limitation</h2><p>The sandbox may use Coinbase public reference data and a reviewed manual fiat cross-rate. This demonstrates the flow but is not approved for real funds. Independent redundant production sources remain a launch gate.</p>
-<h2>Planned Evidence</h2><ul><li>Exact direct and multi-leg arithmetic tests.</li><li>Stale, missing, deviation, sequence-gap, and depeg rejection tests.</li><li>Real PostgreSQL immutability, uniqueness, atomic snapshot, and concurrency tests.</li><li>Provider timeout and worker restart evidence.</li><li>A final updated Sprint 3 report and regenerated PDF.</li></ul>
-<h2>Glossary</h2><p><strong>Pair:</strong> two instruments whose relative price is observed. <strong>Leg:</strong> one step in a conversion route. <strong>Cross-rate:</strong> a rate calculated through intermediate pairs. <strong>Depeg:</strong> a stablecoin moving outside its expected reference band. <strong>Basis point:</strong> one hundredth of one percent.</p>
-<footer>Feature branch and canonical SLE documents. Started 31 August 2026; Sprint 3 remains in progress.</footer></main></body></html>
+<!doctype html><html lang=en><head><meta charset=utf-8><title>SLE Sprint 3 Report</title><link rel=stylesheet href=report.css></head><body><main>
+<p class=eyebrow>Sendaza Liquidity Engine</p><h1>Sprint 3 Market Data</h1><p class=status>Delivered</p>
+<div class=note><strong>Honest status:</strong> code, migrations, tests, and operational checks are delivered. Production pricing is inactive. Single-source sandbox pricing is not approved for real funds.</div>
+<h2>Goal and Connection</h2><p>Sprint 1 created configuration-driven assets, fiat, networks, and markets. Sprint 2 added authentication, idempotency, audit, and durable work. Sprint 3 collects price facts and calculates safety-checked reference rates. Sprint 4 adds spreads, fees, limits, amounts, and expiry.</p>
+<h2>What Was Built</h2><table><tr><th>Part</th><th>Purpose</th></tr><tr><td>Domain</td><td>Exact direct and multi-leg math plus safety guards.</td></tr><tr><td>Adapters</td><td>Coinbase, manual, and deterministic providers behind interfaces.</td></tr><tr><td>PostgreSQL</td><td>Immutable evidence, routes, snapshots, and leased jobs.</td></tr><tr><td>Worker</td><td>Bounded claims, retries, and crash recovery.</td></tr></table>
+<h2>End-to-End Example</h2><p>These currencies are examples, not hardcoded scope.</p><pre class=flow>1 ETH = 2,500 USDT  provider fact
+         | multiply
+1 USDT = 1.00 USD   stablecoin guard
+         | multiply
+1 USD = 1,600 NGN   manual version
+         v
+1 ETH = 4,000,000.00 NGN snapshot
+  + route version, times, and evidence links
+         v
+Sprint 4 adds spread, fee, limits, and expiry</pre>
+<p>The worker resolves server-controlled providers. Decimal strings are validated and stored. Ordered multiply or divide legs use <code>decimal.js</code>, normalize once with half-even rounding, run guards, and commit the snapshot plus evidence in one PostgreSQL transaction.</p>
+<h2>Safety Rules</h2><ul><li>No floating point rate math.</li><li>Missing, stale, deviating, sequence-gap, or depegged evidence rejects pricing.</li><li>Accepted snapshots require one matching observation per leg.</li><li>Evidence is immutable.</li><li>Expired leases can be reclaimed after a worker crash.</li><li>Provider timeouts never erase stored evidence.</li></ul>
+<h2>Place in SLE</h2><pre class=flow>Sendaza Core -> private SLE API
+PostgreSQL <- API and worker -> providers
+     |-- observations and routes
+     +-- accepted or rejected snapshots
+                     v
+          Sprint 4 quote engine
+                     v
+ later purchase, treasury, custody, withdrawal</pre><p>Sendaza owns customers, KYC, locks, ledger entries, and customer interfaces. Sprint 3 never changes customer balances, reserves inventory, or signs transactions.</p>
+<h2>Verification</h2><table><tr><th>Check</th><th>Result</th></tr><tr><td>Focused operations</td><td>5 suites, 36 tests passed</td></tr><tr><td>Full unit suite</td><td>31 suites, 158 tests passed</td></tr><tr><td>Railway <code>sle_test</code></td><td>5 PostgreSQL tests passed</td></tr><tr><td>Static/build</td><td>TypeScript and ESLint passed; API and worker bundles compiled</td></tr><tr><td>Production</td><td>7 migrations; 0 enabled routes, jobs, or valid snapshots</td></tr></table>
+<p>The Nest optional checker reports <code>spawn EPERM</code> in the Windows sandbox. Bundles compile and standalone strict TypeScript passes.</p>
+<h2>Database Repair</h2><p>Real PostgreSQL testing exposed a deferred snapshot-input guard defect. A shared-pool transaction and forward migration <code>20260901000300_snapshot_input_validation</code> added explicit expected, supplied, and matching input checks. It passed on <code>sle_test</code> before approved production deployment.</p>
+<h2>Limitations and Risks</h2><ul><li>No production route or refresh job is active.</li><li>Real funds require independent redundant sources.</li><li>Coinbase reference data is not guaranteed liquidity or an executable price.</li><li>Quotes, custody, treasury, network fees, withdrawals, finality, and reconciliation remain later work.</li><li>The Railway project currently contains PostgreSQL; API and worker deployment is deferred.</li></ul>
+<h2>Next Sprint</h2><p>Sprint 4 builds immutable executable quotes from accepted snapshots. It adds spreads, fixed or percentage purchase fees, exact debit and asset amounts, limits, expiry, idempotency, and stable Sendaza-facing errors.</p>
+<h2>Glossary</h2><p><strong>Observation:</strong> one price fact. <strong>Leg:</strong> one route step. <strong>Cross-rate:</strong> a rate through intermediate pairs. <strong>Snapshot:</strong> a result linked to evidence. <strong>Depeg:</strong> movement outside a reference band. <strong>Basis point:</strong> 0.01 percent. <strong>Lease:</strong> temporary job ownership. <strong>Idempotent:</strong> repeatable without a second effect.</p>
+<footer>Delivered 1 September 2026. This report supplements canonical SLE documents.</footer>
+</main></body></html>

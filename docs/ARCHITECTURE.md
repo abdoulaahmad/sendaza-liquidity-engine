@@ -39,7 +39,8 @@ SLE is a separately deployable private service. It has its own database and cred
 | --- | --- |
 | Asset Registry | Assets, fiat currencies, networks, asset-network mappings |
 | Market Registry | Enabled pairs, spreads, fees, order limits, quote TTL |
-| Quote Engine | Provider pricing, normalization, fee calculation, signed quote snapshot |
+| Market Data | Immutable provider observations, conversion routes, safety guards, reference-rate snapshots |
+| Quote Engine | Spread, purchase-fee and amount calculation from an accepted reference snapshot |
 | Purchase Engine | Quote acceptance, inventory reservation, settlement handshake |
 | Withdrawal Engine | Fee estimate, policy evaluation, custody submission, finality tracking |
 | Treasury | Wallet registry, confirmed balances, reservations, safety and gas buffers |

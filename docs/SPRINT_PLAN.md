@@ -80,6 +80,9 @@ key cannot produce two effects, and committed events cannot be lost.
 
 ## Sprint 3: Market Data and Conversion Routes
 
+**Status:** Delivered on 1 September 2026. Production pricing configuration
+remains inactive pending reviewed sandbox activation.
+
 **Outcome:** SLE produces auditable reference rates through configured direct and
 multi-leg pricing routes.
 

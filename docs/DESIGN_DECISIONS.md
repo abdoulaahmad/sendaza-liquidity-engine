@@ -31,8 +31,8 @@ Canonical stack:
 
 ```text
 NestJS + TypeScript
-Vercel Functions Hobby
-Neon PostgreSQL Free
+Railway API and worker services
+Railway PostgreSQL
 Prisma
 Alchemy Free on Sepolia
 Coinbase public reference prices
@@ -40,6 +40,11 @@ Manual versioned NGN test cross-rate
 Fireblocks Developer Sandbox through an MPC custody adapter
 PostgreSQL transactional outbox
 ```
+
+Railway replaced the earlier Vercel Functions and Neon proposal because SLE
+needs an always-running worker and one PostgreSQL operational boundary for the
+sandbox. The current Railway project contains the database service; API and
+worker deployment remain a later sandbox activation task.
 
 This configuration is not approved for mainnet or customer funds.
 

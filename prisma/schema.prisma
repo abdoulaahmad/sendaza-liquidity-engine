@@ -59,6 +59,11 @@ enum RateRoundingMode {
   HALF_EVEN
 }
 
+enum PricingRefreshJobStatus {
+  PENDING
+  LEASED
+}
+
 model Asset {
   id                String             @id @default(uuid()) @db.Uuid
   symbol            String             @unique @db.VarChar(20)
@@ -160,9 +165,29 @@ model Market {
   createdAt                    DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                    DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
   conversionRoutes             ConversionRoute[]
+  pricingRefreshJob            PricingRefreshJob?
 
   @@unique([baseAssetId, quoteFiatId])
   @@map("markets")
+}
+
+model PricingRefreshJob {
+  id                     String                  @id @default(uuid()) @db.Uuid
+  marketId               String                  @unique @map("market_id") @db.Uuid
+  market                 Market                  @relation(fields: [marketId], references: [id], onDelete: Restrict)
+  refreshIntervalSeconds Int                     @map("refresh_interval_seconds")
+  status                 PricingRefreshJobStatus @default(PENDING)
+  nextRefreshAt          DateTime                @default(now()) @map("next_refresh_at") @db.Timestamptz(6)
+  leaseToken             String?                 @map("lease_token") @db.Uuid
+  leaseExpiresAt         DateTime?               @map("lease_expires_at") @db.Timestamptz(6)
+  attemptCount           Int                     @default(0) @map("attempt_count")
+  lastErrorCode          String?                 @map("last_error_code") @db.VarChar(100)
+  createdAt              DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([status, nextRefreshAt])
+  @@index([leaseExpiresAt])
+  @@map("pricing_refresh_jobs")
 }
 
 model PricingProvider {

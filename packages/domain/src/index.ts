@@ -7,3 +7,4 @@ export * from './audit';
 export * from './outbox';
 export * from './market-data';
 export * from './pricing-refresh';
+export * from './quote';

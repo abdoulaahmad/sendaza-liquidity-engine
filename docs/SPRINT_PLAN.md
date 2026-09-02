@@ -154,9 +154,9 @@ and stale/conflicting evidence prevents unsafe allocation.
 
 ## Sprint 6: Purchase Reservation and Settlement
 
-**Status:** Implementation complete on the Sprint 6 branch on 2 September 2026.
-The isolated PostgreSQL integration gate and production migration remain release
-operations and must be recorded before the sprint is closed.
+**Status:** Complete on 2 September 2026. The isolated PostgreSQL purchase
+lifecycle scenario passed, migration 11 was applied to Railway production, and
+the temporary verification proxy was removed.
 
 **Outcome:** An accepted quote reserves inventory exactly once and converges with
 Sendaza ledger settlement.

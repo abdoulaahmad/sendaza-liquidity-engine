@@ -10,13 +10,13 @@
   <p class="eyebrow">Sendaza Liquidity Engine</p>
   <h1>Sprint 6: Purchase Reservation and Settlement</h1>
   <p class="subtitle">How an accepted quote becomes safely allocated crypto backing</p>
-  <p class="progress">Implementation complete on 2 September 2026; Railway release gate pending</p>
+  <p class="progress">Completed and production migration verified on 2 September 2026</p>
 
-  <div class="note"><strong>Honest status:</strong> The schema, domain service, API,
-  worker, atomic repository, unit tests, integration scenario, and canonical
-  documentation are implemented. Lint, TypeScript, and 233 unit tests pass. The
-  real PostgreSQL rerun and production migration are not yet complete because the
-  Railway Postgres service currently has no public TCP proxy.</div>
+  <div class="note"><strong>Honest status:</strong> Delivered. The schema, domain
+  service, API, worker, atomic repository, tests, and canonical documentation are
+  implemented. Local quality gates and the real PostgreSQL purchase lifecycle
+  scenario pass. Migration 11 is applied to Railway production, and the temporary
+  database proxy used for verification was deleted.</div>
 
   <h2>1. Goal</h2>
   <p>Consume one unexpired purchase quote after Sendaza locks the exact fiat debit,
@@ -98,23 +98,23 @@ SLE locks quote row + exact asset-network inventory row
   <p><strong>Passed:</strong> ESLint; strict TypeScript compilation; API and worker
   production builds; 42 unit suites with 233 tests, including purchase calculations
   and states, parser rejection, API mappings, and treasury refresh preservation.</p>
-  <p><strong>Implemented but awaiting rerun:</strong> a real PostgreSQL test races
-  two purchases against limited inventory, verifies only one succeeds, commits one
-  reservation, rolls another back, times another out, and checks held inventory
-  plus lifecycle outbox events.</p>
-  <p><strong>Environment limitation:</strong> the Railway Postgres service exposes
-  only its private hostname and currently has no public TCP proxy. The local test
-  runner therefore cannot reach <code>sle_test</code>. This is an infrastructure
-  access gate, not a passing database result.</p>
+  <p><strong>Passed on real PostgreSQL:</strong> 11 integration cases passed across
+  the final validation runs. The Sprint 6 scenario independently raced two
+  purchases against limited inventory, proved that only one succeeded, committed
+  one reservation, released a proven rollback, held a timed-out reservation, and
+  verified lifecycle outbox events. The Railway proxy was slow, so the runner used
+  a longer command-line timeout without changing assertions.</p>
+  <p><strong>Production evidence:</strong> Prisma reported migration 11 pending,
+  applied <code>20260902000300_purchase_reservations</code>, and then reported all
+  11 migrations current. The temporary public TCP proxy was deleted immediately;
+  Railway then reported zero proxies.</p>
 
   <h2>8. Limitations and Next Dependency</h2>
   <p>The generic HTTP idempotency record and the purchase transaction still commit
   separately. Database uniqueness prevents duplicate allocation, but a crash after
   purchase commit and before response persistence can leave an idempotency key in
   progress. Automated recovery is required before real-funds launch.</p>
-  <p>Sprint 6 closes only after the isolated PostgreSQL scenario passes, migration
-  11 is verified in production, and the report is regenerated with that evidence.
-  Sprint 7 then builds cached network-fee snapshots for external withdrawals; it
+  <p>Sprint 7 now builds cached network-fee snapshots for external withdrawals; it
   does not change purchase pricing or reservation behavior.</p>
 
   <h2>9. Glossary</h2>

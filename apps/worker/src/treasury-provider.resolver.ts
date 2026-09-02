@@ -39,7 +39,8 @@ export class WorkerChainBalanceProviderResolver implements ChainBalanceProviderR
 
   constructor(private readonly configuration: TreasurySyncConfiguration) {}
 
-  resolve(networkCode: string): ChainBalanceProvider {
+  resolve(networkCode: string, addressFamily: string): ChainBalanceProvider {
+    if (addressFamily !== 'EVM') throw new Error('CHAIN_ADAPTER_UNSUPPORTED');
     const existing = this.providers.get(networkCode);
     if (existing) return existing;
     const url = this.configuration.chainRpcUrls().get(networkCode);

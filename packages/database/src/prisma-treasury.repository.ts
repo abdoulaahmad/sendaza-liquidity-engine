@@ -30,7 +30,7 @@ export class PrismaTreasuryRepository implements TreasuryRepository {
           select: {
             networkDecimals: true,
             contractAddress: true,
-            network: { select: { code: true } },
+            network: { select: { code: true, addressFamily: true } },
           },
         },
       },
@@ -40,6 +40,7 @@ export class PrismaTreasuryRepository implements TreasuryRepository {
       walletId: wallet.id,
       assetNetworkId: wallet.assetNetworkId,
       networkCode: wallet.assetNetwork.network.code,
+      addressFamily: wallet.assetNetwork.network.addressFamily,
       assetDecimals: wallet.assetNetwork.networkDecimals,
       ...(wallet.assetNetwork.contractAddress
         ? { contractAddress: wallet.assetNetwork.contractAddress }

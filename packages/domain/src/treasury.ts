@@ -8,6 +8,7 @@ export interface TreasurySyncTarget {
   readonly walletId: string;
   readonly assetNetworkId: string;
   readonly networkCode: string;
+  readonly addressFamily: string;
   readonly assetDecimals: number;
   readonly contractAddress?: string;
   readonly providerKind: CustodyProviderKind;
@@ -46,7 +47,7 @@ export abstract class ChainBalanceProvider {
 }
 
 export abstract class ChainBalanceProviderResolver {
-  abstract resolve(networkCode: string): ChainBalanceProvider;
+  abstract resolve(networkCode: string, addressFamily: string): ChainBalanceProvider;
 }
 
 export interface NewTreasurySnapshot {
@@ -136,7 +137,7 @@ export class TreasurySynchronizationService {
     let chainConfirmedAtomic: bigint | undefined;
     if (target.verificationRequired && status !== 'STALE') {
       chainConfirmedAtomic = await this.chainProviders
-        .resolve(target.networkCode)
+        .resolve(target.networkCode, target.addressFamily)
         .getConfirmedBalanceAtomic(target);
       status = chainConfirmedAtomic === amounts.total ? 'MATCHED' : 'MISMATCH';
     }
@@ -260,9 +261,16 @@ function addressMatches(
 ): boolean {
   return addresses.some(
     (entry) =>
-      entry.address.toLowerCase() === target.publicAddress.toLowerCase() &&
+      sameAddress(entry.address, target.publicAddress) &&
       (target.addressTag === undefined || entry.tag === target.addressTag),
   );
+}
+
+function sameAddress(providerAddress: string, configuredAddress: string): boolean {
+  if (/^0x[0-9a-f]+$/i.test(providerAddress) && /^0x[0-9a-f]+$/i.test(configuredAddress)) {
+    return providerAddress.toLowerCase() === configuredAddress.toLowerCase();
+  }
+  return providerAddress === configuredAddress;
 }
 
 function nonNegative(value: bigint): bigint {

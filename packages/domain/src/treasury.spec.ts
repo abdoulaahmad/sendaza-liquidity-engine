@@ -16,6 +16,7 @@ describe('TreasurySynchronizationService', () => {
     walletId: 'wallet-1',
     assetNetworkId: 'eth-sepolia',
     networkCode: 'SEPOLIA',
+    addressFamily: 'EVM',
     assetDecimals: 18,
     providerKind: 'DETERMINISTIC_FAKE',
     providerCode: 'fake',
@@ -111,6 +112,17 @@ describe('TreasurySynchronizationService', () => {
     await expect(service.synchronize(target)).rejects.toMatchObject({
       code: 'PROVIDER_ADDRESS_MISMATCH',
     });
+  });
+
+  it('keeps non-EVM address comparison case-sensitive', async () => {
+    getWalletBalance.mockResolvedValue({ ...evidence, addresses: [{ address: 'SoLabc' }] });
+    await expect(
+      service.synchronize({
+        ...target,
+        addressFamily: 'SOLANA',
+        publicAddress: 'SoLAbc',
+      }),
+    ).rejects.toMatchObject({ code: 'PROVIDER_ADDRESS_MISMATCH' });
   });
 
   it('supports provider-only observation when independent verification is optional', async () => {

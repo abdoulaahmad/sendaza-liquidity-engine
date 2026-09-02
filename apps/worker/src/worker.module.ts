@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { SendazaWebhookConfiguration } from '../../../packages/configuration/src';
 import { PricingRefreshConfiguration } from '../../../packages/configuration/src';
 import { TreasurySyncConfiguration } from '../../../packages/configuration/src';
+import { PurchaseConfiguration } from '../../../packages/configuration/src';
 import { DatabaseModule } from '../../../packages/database/src';
 import {
   OutboxDeliveryService,
@@ -18,6 +19,8 @@ import {
   TreasurySynchronizationService,
   TreasurySyncBatchService,
   TreasurySyncJobRepository,
+  PurchaseTimeoutBatchService,
+  PurchaseTimeoutRepository,
 } from '../../../packages/domain/src';
 import { OutboxWorker } from './outbox.worker';
 import { SendazaWebhookPublisher } from './sendaza-webhook.publisher';
@@ -31,6 +34,7 @@ import {
   WorkerCustodyProviderResolver,
 } from './treasury-provider.resolver';
 import { TreasurySyncWorker } from './treasury-sync.worker';
+import { PurchaseTimeoutWorker } from './purchase-timeout.worker';
 
 @Module({
   imports: [DatabaseModule],
@@ -38,6 +42,7 @@ import { TreasurySyncWorker } from './treasury-sync.worker';
     SendazaWebhookConfiguration,
     PricingRefreshConfiguration,
     TreasurySyncConfiguration,
+    PurchaseConfiguration,
     SendazaWebhookPublisher,
     { provide: OutboxPublisher, useExisting: SendazaWebhookPublisher },
     {
@@ -142,6 +147,17 @@ import { TreasurySyncWorker } from './treasury-sync.worker';
       ],
     },
     TreasurySyncWorker,
+    {
+      provide: PurchaseTimeoutBatchService,
+      useFactory: (jobs: PurchaseTimeoutRepository, configuration: PurchaseConfiguration) =>
+        new PurchaseTimeoutBatchService(
+          jobs,
+          configuration.timeoutBatchSize,
+          configuration.timeoutLeaseSeconds,
+        ),
+      inject: [PurchaseTimeoutRepository, PurchaseConfiguration],
+    },
+    PurchaseTimeoutWorker,
   ],
 })
 export class WorkerModule {}

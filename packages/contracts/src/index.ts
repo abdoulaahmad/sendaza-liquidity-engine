@@ -38,3 +38,58 @@ export function parseCreateQuoteBody(value: unknown): CreateQuoteBody {
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
+
+export interface CreatePurchaseBody {
+  quoteId: string;
+  customerReference: string;
+  clientLockReference: string;
+  clientReference: string;
+}
+export interface SettlePurchaseBody {
+  status: 'COMMITTED' | 'ROLLED_BACK';
+  clientSettlementReference: string;
+  settledAt: string;
+}
+
+export function parseCreatePurchaseBody(value: unknown): CreatePurchaseBody {
+  const keys = ['clientLockReference', 'clientReference', 'customerReference', 'quoteId'];
+  if (
+    !isPlainObject(value) ||
+    Object.keys(value).length !== keys.length ||
+    !keys.every((key) => key in value)
+  )
+    throw new ContractValidationError('INVALID_REQUEST_BODY');
+  if (typeof value.quoteId !== 'string' || !UUID_PATTERN.test(value.quoteId))
+    throw new ContractValidationError('INVALID_REQUEST_BODY');
+  for (const key of keys.slice(0, 3)) {
+    const item = value[key];
+    if (typeof item !== 'string' || item.length < 1 || item.length > 100)
+      throw new ContractValidationError('INVALID_REQUEST_BODY');
+  }
+  return value as unknown as CreatePurchaseBody;
+}
+
+export function parseSettlePurchaseBody(value: unknown): SettlePurchaseBody {
+  const keys = ['clientSettlementReference', 'settledAt', 'status'];
+  if (
+    !isPlainObject(value) ||
+    Object.keys(value).length !== keys.length ||
+    !keys.every((key) => key in value)
+  )
+    throw new ContractValidationError('INVALID_REQUEST_BODY');
+  if (value.status !== 'COMMITTED' && value.status !== 'ROLLED_BACK')
+    throw new ContractValidationError('INVALID_REQUEST_BODY');
+  if (
+    typeof value.clientSettlementReference !== 'string' ||
+    value.clientSettlementReference.length < 1 ||
+    value.clientSettlementReference.length > 100
+  )
+    throw new ContractValidationError('INVALID_REQUEST_BODY');
+  if (
+    typeof value.settledAt !== 'string' ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/.test(value.settledAt) ||
+    Number.isNaN(Date.parse(value.settledAt))
+  )
+    throw new ContractValidationError('INVALID_REQUEST_BODY');
+  return value as unknown as SettlePurchaseBody;
+}

@@ -45,10 +45,8 @@ Returns enabled purchase markets, limits, and status. It does not return executa
 ```json
 {
   "side": "BUY",
-  "baseAsset": "ETH",
-  "quoteCurrency": "NGN",
-  "quoteAmount": "200000.0000",
-  "customerReference": "usr_123"
+  "marketId": "0ed15b4a-483a-4938-a06c-13645a8c8118",
+  "debitAmount": "200000.00"
 }
 ```
 
@@ -58,18 +56,27 @@ Response:
 {
   "success": true,
   "data": {
-    "quoteId": "qt_01K4Y5ZVCC",
-    "market": "ETH/NGN",
-    "debitAmount": "200000.0000",
-    "destinationAmount": "0.032673267326732673",
-    "marketRate": "6000000.0000",
+    "quoteId": "79622a38-f616-48b8-a4fc-da62df55fef2",
+    "side": "BUY",
+    "marketId": "0ed15b4a-483a-4938-a06c-13645a8c8118",
+    "debitAmount": "200000.00",
+    "tradeAmount": "197000.00",
+    "fixedFeeAmount": "1000.00",
+    "percentageFeeAmount": "2000.00",
+    "totalFeeAmount": "3000.00",
+    "referenceRate": "6000000.0000",
     "customerRate": "6060000.0000",
-    "feeAmount": "2000.0000",
-    "expiresAt": "2026-08-29T15:30:15Z",
-    "configurationVersion": 4
+    "spreadAmount": "1950.49",
+    "destinationAmount": "0.032508250825082508",
+    "expiresAt": "2026-09-02T15:30:15.000Z",
+    "configurationVersion": 5
   }
 }
 ```
+
+The body is strict: unknown fields and client-selected providers, routes,
+policies, backing networks, or rounding modes are rejected. All monetary values
+are decimal strings. `Idempotency-Key` and `X-Correlation-Id` are required.
 
 ### `POST /purchases`
 

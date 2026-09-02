@@ -125,11 +125,17 @@ Completed quote records and their economic components are immutable. Expiry is
 derived from `expires_at`; no background job must mutate a quote to mark it
 expired. Corrections create a new quote.
 
-The quote transaction locks or otherwise verifies the selected snapshot and
-policy consistently, inserts the quote, and completes the existing idempotency
-record atomically. A repeated identical request returns the stored response. A
+The database validates the selected snapshot and policy when it inserts the
+quote. The existing idempotency layer then stores the response. A repeated
+identical completed request returns the stored response. A
 reused idempotency key with another request hash returns
 `IDEMPOTENCY_KEY_REUSED`.
+
+The quote insert and idempotency completion are currently separate database
+transactions. A crash between them leaves the durable quote and an
+`IN_PROGRESS` idempotency record; it cannot create a duplicate through that key,
+but operations must reconcile it. Transactional completion or automated stale
+record recovery is deferred before real-funds launch.
 
 ## Response Contract
 

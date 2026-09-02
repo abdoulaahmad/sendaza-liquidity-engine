@@ -358,6 +358,20 @@ describe('pricing PostgreSQL integration', () => {
       },
     });
     const start = new Date();
+    const observationInput = {
+      price: '1600.25',
+      observedAt: start,
+      providerSequence: `purchase-${suffix}`,
+    };
+    const purchaseObservation = await pricing.insertObservation({
+      providerPairId: ids.pair,
+      normalizedRate: observationInput.price,
+      rawRate: observationInput.price,
+      providerObservedAt: observationInput.observedAt,
+      providerSequence: observationInput.providerSequence,
+      deduplicationKey: createObservationDeduplicationKey(ids.pair, observationInput),
+      receivedAt: start,
+    });
     await treasury.saveSnapshot({
       walletId,
       assetNetworkId: ids.assetNetwork,
@@ -383,7 +397,7 @@ describe('pricing PostgreSQL integration', () => {
       roundingMode: 'HALF_EVEN',
       calculatedAt: start,
       validUntil: new Date(start.getTime() + 30_000),
-      inputs: [{ routeLegId: ids.leg, observationId }],
+      inputs: [{ routeLegId: ids.leg, observationId: purchaseObservation.id }],
     });
     const quoteService = new QuoteService(quotes, () => start);
     const [firstQuote, secondQuote] = await Promise.all([
@@ -471,7 +485,7 @@ describe('pricing PostgreSQL integration', () => {
       roundingMode: 'HALF_EVEN',
       calculatedAt: refreshedAt,
       validUntil: new Date(refreshedAt.getTime() + 30_000),
-      inputs: [{ routeLegId: ids.leg, observationId }],
+      inputs: [{ routeLegId: ids.leg, observationId: purchaseObservation.id }],
     });
     const nextQuote = await new QuoteService(quotes, () => refreshedAt).createBuyQuote({
       marketId: ids.market,

@@ -7,13 +7,11 @@ describe('EvmChainBalanceProvider', () => {
   } as TreasurySyncTarget;
 
   it('reads a native balance as an exact bigint', async () => {
-    const fetcher = jest
-      .fn()
-      .mockResolvedValue(
-        new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: '0x1bc16d674ec80000' }), {
-          status: 200,
-        }),
-      );
+    const fetcher = jest.fn().mockResolvedValue(
+      new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: '0x1bc16d674ec80000' }), {
+        status: 200,
+      }),
+    );
     const provider = new EvmChainBalanceProvider('https://rpc.example', fetcher);
     await expect(provider.getConfirmedBalanceAtomic(target)).resolves.toBe(
       2_000_000_000_000_000_000n,

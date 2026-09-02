@@ -71,6 +71,7 @@ export interface TreasurySnapshotEvidence {
 export interface StoredTreasurySnapshot extends TreasurySnapshotEvidence {
   readonly snapshotId: string;
   readonly reservedAtomic: bigint;
+  readonly allocatedAtomic: bigint;
   readonly sellableAtomic: bigint;
 }
 
@@ -147,7 +148,6 @@ export class TreasurySynchronizationService {
     }
 
     const operationalUnavailable = amounts.total - amounts.available;
-    const reserve = target.safetyBufferAtomic + target.gasReserveAtomic;
     const snapshot: TreasurySnapshotEvidence = {
       walletId: target.walletId,
       assetNetworkId: target.assetNetworkId,
@@ -274,12 +274,18 @@ function sameAddress(providerAddress: string, configuredAddress: string): boolea
 export function calculateSellableInventory(
   providerAvailableAtomic: bigint,
   reservedAtomic: bigint,
+  allocatedAtomic: bigint,
   safetyBufferAtomic: bigint,
   gasReserveAtomic: bigint,
   status: TreasuryVerificationStatus,
 ): bigint {
   if (status === 'MISMATCH' || status === 'STALE') return 0n;
-  const result = providerAvailableAtomic - reservedAtomic - safetyBufferAtomic - gasReserveAtomic;
+  const result =
+    providerAvailableAtomic -
+    reservedAtomic -
+    allocatedAtomic -
+    safetyBufferAtomic -
+    gasReserveAtomic;
   return result > 0n ? result : 0n;
 }
 

@@ -62,16 +62,20 @@ export class PrismaTreasuryRepository implements TreasuryRepository {
 
   async saveSnapshot(snapshot: TreasurySnapshotEvidence): Promise<StoredTreasurySnapshot> {
     return this.prisma.$transaction(async (transaction) => {
-      const rows = await transaction.$queryRaw<{ reservedatomic: bigint }[]>(Prisma.sql`
-        SELECT reserved_atomic AS reservedAtomic
+      const rows = await transaction.$queryRaw<
+        { reservedatomic: bigint; allocatedatomic: bigint }[]
+      >(Prisma.sql`
+        SELECT reserved_atomic AS reservedAtomic, allocated_atomic AS allocatedAtomic
         FROM treasury_inventory_state
         WHERE asset_network_id = ${snapshot.assetNetworkId}::uuid
         FOR UPDATE
       `);
       const reservedAtomic = rows[0]?.reservedatomic ?? 0n;
+      const allocatedAtomic = rows[0]?.allocatedatomic ?? 0n;
       const sellableAtomic = calculateSellableInventory(
         snapshot.providerAvailableAtomic,
         reservedAtomic,
+        allocatedAtomic,
         snapshot.safetyBufferAtomic,
         snapshot.gasReserveAtomic,
         snapshot.verificationStatus,
@@ -87,6 +91,7 @@ export class PrismaTreasuryRepository implements TreasuryRepository {
           lockedAtomic: snapshot.lockedAtomic,
           chainConfirmedAtomic: snapshot.chainConfirmedAtomic,
           reservedAtomic,
+          allocatedAtomic,
           safetyBufferAtomic: snapshot.safetyBufferAtomic,
           gasReserveAtomic: snapshot.gasReserveAtomic,
           unavailableAtomic: snapshot.unavailableAtomic,
@@ -102,6 +107,7 @@ export class PrismaTreasuryRepository implements TreasuryRepository {
         latestSnapshotId: created.id,
         sellableAtomic,
         reservedAtomic,
+        allocatedAtomic,
         verificationStatus: snapshot.verificationStatus,
         evidenceExpiresAt: snapshot.expiresAt,
       };
@@ -110,7 +116,13 @@ export class PrismaTreasuryRepository implements TreasuryRepository {
         create: { assetNetworkId: snapshot.assetNetworkId, ...state },
         update: state,
       });
-      return { ...snapshot, snapshotId: created.id, reservedAtomic, sellableAtomic };
+      return {
+        ...snapshot,
+        snapshotId: created.id,
+        reservedAtomic,
+        allocatedAtomic,
+        sellableAtomic,
+      };
     });
   }
 }

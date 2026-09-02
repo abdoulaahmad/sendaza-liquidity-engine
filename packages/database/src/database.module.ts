@@ -16,6 +16,8 @@ import {
   QuoteRepository,
   TreasuryRepository,
   TreasurySyncJobRepository,
+  PurchaseRepository,
+  PurchaseTimeoutRepository,
 } from '../../domain/src';
 import { PrismaIdempotencyRepository } from './prisma-idempotency.repository';
 import { PrismaAuditRepository } from './prisma-audit.repository';
@@ -27,6 +29,10 @@ import {
   PrismaTreasuryRepository,
   PrismaTreasurySyncJobRepository,
 } from './prisma-treasury.repository';
+import {
+  PrismaPurchaseRepository,
+  PrismaPurchaseTimeoutRepository,
+} from './prisma-purchase.repository';
 
 @Module({
   providers: [
@@ -42,6 +48,8 @@ import {
     PrismaQuoteRepository,
     PrismaTreasuryRepository,
     PrismaTreasurySyncJobRepository,
+    PrismaPurchaseRepository,
+    PrismaPurchaseTimeoutRepository,
     { provide: AuthenticationNonceRepository, useExisting: PrismaAuthenticationNonceRepository },
     { provide: CredentialMetadataRepository, useExisting: PrismaCredentialMetadataRepository },
     { provide: IdempotencyRepository, useExisting: PrismaIdempotencyRepository },
@@ -51,6 +59,8 @@ import {
     { provide: QuoteRepository, useExisting: PrismaQuoteRepository },
     { provide: TreasuryRepository, useExisting: PrismaTreasuryRepository },
     { provide: TreasurySyncJobRepository, useExisting: PrismaTreasurySyncJobRepository },
+    { provide: PurchaseRepository, useExisting: PrismaPurchaseRepository },
+    { provide: PurchaseTimeoutRepository, useExisting: PrismaPurchaseTimeoutRepository },
     {
       provide: PricingRefreshJobRepository,
       useExisting: PrismaPricingRefreshJobRepository,
@@ -68,6 +78,8 @@ import {
     QuoteRepository,
     TreasuryRepository,
     TreasurySyncJobRepository,
+    PurchaseRepository,
+    PurchaseTimeoutRepository,
   ],
 })
 export class DatabaseModule {}

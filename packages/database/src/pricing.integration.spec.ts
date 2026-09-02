@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { QuoteService, createObservationDeduplicationKey } from '../../domain/src';
 import { PrismaQuoteRepository } from './prisma-quote.repository';
+import {
+  PrismaPurchaseRepository,
+  PrismaPurchaseTimeoutRepository,
+} from './prisma-purchase.repository';
+import { PrismaTreasuryRepository } from './prisma-treasury.repository';
 import { PrismaPricingRefreshJobRepository } from './prisma-pricing-refresh-job.repository';
 import { PrismaPricingRepository } from './prisma-pricing.repository';
 import { PrismaService } from './prisma.service';
@@ -12,6 +17,10 @@ describe('pricing PostgreSQL integration', () => {
   const secondPricing = new PrismaPricingRepository(secondPrisma);
   const jobs = new PrismaPricingRefreshJobRepository(prisma);
   const quotes = new PrismaQuoteRepository(prisma);
+  const purchases = new PrismaPurchaseRepository(prisma);
+  const secondPurchases = new PrismaPurchaseRepository(secondPrisma);
+  const purchaseTimeouts = new PrismaPurchaseTimeoutRepository(prisma);
+  const treasury = new PrismaTreasuryRepository(prisma);
   const secondJobs = new PrismaPricingRefreshJobRepository(secondPrisma);
   const suffix = randomUUID().replaceAll('-', '').slice(0, 12).toUpperCase();
   const ids = {
@@ -327,5 +336,202 @@ describe('pricing PostgreSQL integration', () => {
         destination_rounding_mode, expires_at, created_at
       FROM quotes WHERE id = ${result.quoteId}::uuid`,
     ).rejects.toBeDefined();
+  });
+
+  it('prevents oversell and converges committed, rolled-back, and timed-out purchases', async () => {
+    const custodyProviderId = randomUUID();
+    const walletId = randomUUID();
+    await prisma.custodyProviderConfiguration.create({
+      data: { id: custodyProviderId, code: `BUY_${suffix}`, type: 'DETERMINISTIC_FAKE' },
+    });
+    await prisma.treasuryWallet.create({
+      data: {
+        id: walletId,
+        assetNetworkId: ids.assetNetwork,
+        custodyProviderId,
+        providerVaultId: `buy-vault-${suffix}`,
+        providerAssetId: `buy-asset-${suffix}`,
+        publicAddress: '0x00000000000000000000000000000000000000cc',
+        verificationRequired: true,
+        staleAfterSeconds: 60,
+        status: 'ENABLED',
+      },
+    });
+    const start = new Date();
+    await treasury.saveSnapshot({
+      walletId,
+      assetNetworkId: ids.assetNetwork,
+      controlledAtomic: 200_000_000n,
+      providerAvailableAtomic: 200_000_000n,
+      pendingAtomic: 0n,
+      frozenAtomic: 0n,
+      lockedAtomic: 0n,
+      chainConfirmedAtomic: 200_000_000n,
+      safetyBufferAtomic: 0n,
+      gasReserveAtomic: 0n,
+      unavailableAtomic: 0n,
+      verificationStatus: 'MATCHED',
+      observedAt: start,
+      expiresAt: new Date(start.getTime() + 60_000),
+    });
+    await pricing.saveEvaluation({
+      status: 'ACCEPTED',
+      routeId: ids.route,
+      routeVersion: 1,
+      rate: '1600.25',
+      outputScale: 2,
+      roundingMode: 'HALF_EVEN',
+      calculatedAt: start,
+      validUntil: new Date(start.getTime() + 30_000),
+      inputs: [{ routeLegId: ids.leg, observationId }],
+    });
+    const quoteService = new QuoteService(quotes, () => start);
+    const [firstQuote, secondQuote] = await Promise.all([
+      quoteService.createBuyQuote({ marketId: ids.market, debitAmount: '2000.00' }),
+      quoteService.createBuyQuote({ marketId: ids.market, debitAmount: '2000.00' }),
+    ]);
+    const correlationId = randomUUID();
+    const results = await Promise.all([
+      purchases.createReservation({
+        quoteId: firstQuote.quoteId,
+        customerReference: 'customer-a',
+        clientLockReference: `lock-a-${suffix}`,
+        clientReference: `buy-a-${suffix}`,
+        correlationId,
+        createdAt: start,
+        reservationTtlSeconds: 60,
+      }),
+      secondPurchases.createReservation({
+        quoteId: secondQuote.quoteId,
+        customerReference: 'customer-b',
+        clientLockReference: `lock-b-${suffix}`,
+        clientReference: `buy-b-${suffix}`,
+        correlationId,
+        createdAt: start,
+        reservationTtlSeconds: 60,
+      }),
+    ]);
+    const accepted = results.find((result) => result.kind === 'SUCCESS');
+    expect(results.filter((result) => result.kind === 'SUCCESS')).toHaveLength(1);
+    expect(results.find((result) => result.kind === 'FAILURE')).toMatchObject({
+      code: 'INSUFFICIENT_INVENTORY',
+    });
+    if (!accepted || accepted.kind !== 'SUCCESS') throw new Error('expected purchase');
+    await expect(
+      purchases.createReservation({
+        quoteId: accepted.value.quoteId,
+        customerReference: 'customer-a',
+        clientLockReference: `lock-copy-${suffix}`,
+        clientReference: `buy-copy-${suffix}`,
+        correlationId,
+        createdAt: start,
+        reservationTtlSeconds: 60,
+      }),
+    ).resolves.toMatchObject({ kind: 'FAILURE', code: 'QUOTE_ALREADY_USED' });
+
+    await expect(
+      purchases.settle({
+        purchaseId: accepted.value.id,
+        outcome: 'COMMITTED',
+        clientSettlementReference: `settle-a-${suffix}`,
+        clientSettledAt: start,
+        correlationId,
+        recordedAt: new Date(start.getTime() + 1_000),
+      }),
+    ).resolves.toMatchObject({ kind: 'SUCCESS', value: { status: 'COMPLETED' } });
+    await expect(
+      prisma.treasuryInventoryState.findUniqueOrThrow({
+        where: { assetNetworkId: ids.assetNetwork },
+      }),
+    ).resolves.toMatchObject({ reservedAtomic: 0n, allocatedAtomic: accepted.value.creditAtomic });
+
+    const refreshedAt = new Date(start.getTime() + 2_000);
+    await treasury.saveSnapshot({
+      walletId,
+      assetNetworkId: ids.assetNetwork,
+      controlledAtomic: 400_000_000n,
+      providerAvailableAtomic: 400_000_000n,
+      pendingAtomic: 0n,
+      frozenAtomic: 0n,
+      lockedAtomic: 0n,
+      chainConfirmedAtomic: 400_000_000n,
+      safetyBufferAtomic: 0n,
+      gasReserveAtomic: 0n,
+      unavailableAtomic: 0n,
+      verificationStatus: 'MATCHED',
+      observedAt: refreshedAt,
+      expiresAt: new Date(refreshedAt.getTime() + 60_000),
+    });
+    await pricing.saveEvaluation({
+      status: 'ACCEPTED',
+      routeId: ids.route,
+      routeVersion: 1,
+      rate: '1600.25',
+      outputScale: 2,
+      roundingMode: 'HALF_EVEN',
+      calculatedAt: refreshedAt,
+      validUntil: new Date(refreshedAt.getTime() + 30_000),
+      inputs: [{ routeLegId: ids.leg, observationId }],
+    });
+    const nextQuote = await new QuoteService(quotes, () => refreshedAt).createBuyQuote({
+      marketId: ids.market,
+      debitAmount: '2000.00',
+    });
+    const rollbackPurchase = await purchases.createReservation({
+      quoteId: nextQuote.quoteId,
+      customerReference: 'customer-c',
+      clientLockReference: `lock-c-${suffix}`,
+      clientReference: `buy-c-${suffix}`,
+      correlationId,
+      createdAt: refreshedAt,
+      reservationTtlSeconds: 60,
+    });
+    if (rollbackPurchase.kind !== 'SUCCESS') throw new Error('expected rollback purchase');
+    await expect(
+      purchases.settle({
+        purchaseId: rollbackPurchase.value.id,
+        outcome: 'ROLLED_BACK',
+        clientSettlementReference: `rollback-c-${suffix}`,
+        clientSettledAt: refreshedAt,
+        correlationId,
+        recordedAt: new Date(refreshedAt.getTime() + 1_000),
+      }),
+    ).resolves.toMatchObject({ kind: 'SUCCESS', value: { status: 'ROLLED_BACK' } });
+
+    const timeoutQuote = await new QuoteService(quotes, () => refreshedAt).createBuyQuote({
+      marketId: ids.market,
+      debitAmount: '2000.00',
+    });
+    const timeoutPurchase = await purchases.createReservation({
+      quoteId: timeoutQuote.quoteId,
+      customerReference: 'customer-d',
+      clientLockReference: `lock-d-${suffix}`,
+      clientReference: `buy-d-${suffix}`,
+      correlationId,
+      createdAt: refreshedAt,
+      reservationTtlSeconds: 5,
+    });
+    if (timeoutPurchase.kind !== 'SUCCESS') throw new Error('expected timeout purchase');
+    const overdue = new Date(refreshedAt.getTime() + 6_000);
+    const claims = await purchaseTimeouts.claimBatch({
+      limit: 100,
+      leaseSeconds: 30,
+      leaseToken: randomUUID(),
+      now: overdue,
+    });
+    const claim = claims.find((item) => item.purchaseId === timeoutPurchase.value.id)!;
+    await purchaseTimeouts.reconcileOverdue(claim, overdue, correlationId);
+    await expect(
+      prisma.purchase.findUniqueOrThrow({
+        where: { id: timeoutPurchase.value.id },
+        include: { reservation: true },
+      }),
+    ).resolves.toMatchObject({
+      status: 'RECONCILIATION_REQUIRED',
+      reservation: { status: 'HELD_RECONCILIATION' },
+    });
+    expect(
+      await prisma.outboxEvent.count({ where: { aggregateType: 'purchase' } }),
+    ).toBeGreaterThanOrEqual(5);
   });
 });

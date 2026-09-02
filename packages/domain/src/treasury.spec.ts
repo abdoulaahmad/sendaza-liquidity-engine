@@ -64,6 +64,7 @@ describe('TreasurySynchronizationService', () => {
       ...snapshot,
       snapshotId: 'snapshot-1',
       reservedAtomic: 0n,
+      allocatedAtomic: 0n,
       sellableAtomic:
         snapshot.verificationStatus === 'MISMATCH' || snapshot.verificationStatus === 'STALE'
           ? 0n

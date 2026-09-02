@@ -8,17 +8,22 @@ import { CredentialSecretProvider } from '../../../packages/configuration/src';
 import { AuthenticationGuard } from './authentication.guard';
 import { IdempotencyInterceptor } from './idempotency.interceptor';
 import { AuditInterceptor } from './audit.interceptor';
+import { QuoteController } from './quote.controller';
+import { QuoteRepository, QuoteService } from '../../../packages/domain/src';
+import { PrismaQuoteRepository } from '../../../packages/database/src';
 
 @Module({
   imports: [DatabaseModule],
-  controllers: [HealthController, RegistryController],
+  controllers: [HealthController, RegistryController, QuoteController],
   providers: [
     RegistryService,
+    QuoteService,
     CredentialSecretProvider,
     { provide: APP_GUARD, useClass: AuthenticationGuard },
     { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
     { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
     { provide: RegistryRepository, useExisting: PrismaRegistryRepository },
+    { provide: QuoteRepository, useExisting: PrismaQuoteRepository },
   ],
 })
 export class ApiModule {}

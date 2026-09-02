@@ -14,6 +14,8 @@ import {
   PricingRepository,
   PricingRefreshJobRepository,
   QuoteRepository,
+  TreasuryRepository,
+  TreasurySyncJobRepository,
 } from '../../domain/src';
 import { PrismaIdempotencyRepository } from './prisma-idempotency.repository';
 import { PrismaAuditRepository } from './prisma-audit.repository';
@@ -21,6 +23,10 @@ import { PrismaOutboxRepository } from './prisma-outbox.repository';
 import { PrismaPricingRepository } from './prisma-pricing.repository';
 import { PrismaPricingRefreshJobRepository } from './prisma-pricing-refresh-job.repository';
 import { PrismaQuoteRepository } from './prisma-quote.repository';
+import {
+  PrismaTreasuryRepository,
+  PrismaTreasurySyncJobRepository,
+} from './prisma-treasury.repository';
 
 @Module({
   providers: [
@@ -34,6 +40,8 @@ import { PrismaQuoteRepository } from './prisma-quote.repository';
     PrismaPricingRepository,
     PrismaPricingRefreshJobRepository,
     PrismaQuoteRepository,
+    PrismaTreasuryRepository,
+    PrismaTreasurySyncJobRepository,
     { provide: AuthenticationNonceRepository, useExisting: PrismaAuthenticationNonceRepository },
     { provide: CredentialMetadataRepository, useExisting: PrismaCredentialMetadataRepository },
     { provide: IdempotencyRepository, useExisting: PrismaIdempotencyRepository },
@@ -41,6 +49,8 @@ import { PrismaQuoteRepository } from './prisma-quote.repository';
     { provide: OutboxRepository, useExisting: PrismaOutboxRepository },
     { provide: PricingRepository, useExisting: PrismaPricingRepository },
     { provide: QuoteRepository, useExisting: PrismaQuoteRepository },
+    { provide: TreasuryRepository, useExisting: PrismaTreasuryRepository },
+    { provide: TreasurySyncJobRepository, useExisting: PrismaTreasurySyncJobRepository },
     {
       provide: PricingRefreshJobRepository,
       useExisting: PrismaPricingRefreshJobRepository,
@@ -56,6 +66,8 @@ import { PrismaQuoteRepository } from './prisma-quote.repository';
     PricingRepository,
     PricingRefreshJobRepository,
     QuoteRepository,
+    TreasuryRepository,
+    TreasurySyncJobRepository,
   ],
 })
 export class DatabaseModule {}

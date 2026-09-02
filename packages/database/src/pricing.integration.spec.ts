@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { createObservationDeduplicationKey } from '../../domain/src';
+import { QuoteService, createObservationDeduplicationKey } from '../../domain/src';
+import { PrismaQuoteRepository } from './prisma-quote.repository';
 import { PrismaPricingRefreshJobRepository } from './prisma-pricing-refresh-job.repository';
 import { PrismaPricingRepository } from './prisma-pricing.repository';
 import { PrismaService } from './prisma.service';
@@ -10,6 +11,7 @@ describe('pricing PostgreSQL integration', () => {
   const pricing = new PrismaPricingRepository(prisma);
   const secondPricing = new PrismaPricingRepository(secondPrisma);
   const jobs = new PrismaPricingRefreshJobRepository(prisma);
+  const quotes = new PrismaQuoteRepository(prisma);
   const secondJobs = new PrismaPricingRefreshJobRepository(secondPrisma);
   const suffix = randomUUID().replaceAll('-', '').slice(0, 12).toUpperCase();
   const ids = {
@@ -25,6 +27,7 @@ describe('pricing PostgreSQL integration', () => {
     route: randomUUID(),
     leg: randomUUID(),
     job: randomUUID(),
+    policy: randomUUID(),
   };
   let configurationVersionId: number;
   let observationId: string;
@@ -127,6 +130,25 @@ describe('pricing PostgreSQL integration', () => {
       },
     });
     await prisma.conversionRoute.update({ where: { id: ids.route }, data: { status: 'ENABLED' } });
+    await prisma.quotePolicyVersion.create({
+      data: {
+        id: ids.policy,
+        marketId: ids.market,
+        version: 1,
+        spreadBps: 100,
+        fixedFeeAtomic: 100n,
+        percentageFeeBps: 100,
+        minTotalDebitAtomic: 1_000n,
+        maxTotalDebitAtomic: 1_000_000n,
+        quoteTtlSeconds: 15,
+        rateDisplayScale: 4,
+        status: 'ACTIVE',
+        configurationVersionId,
+        actorId: 'system:integration-test',
+        reason: 'Verify Sprint 4 quote persistence',
+        effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    });
   });
 
   afterAll(async () => {
@@ -260,5 +282,50 @@ describe('pricing PostgreSQL integration', () => {
         select: { rawRate: true },
       }),
     ).toEqual({ rawRate: '1600.25' });
+  });
+
+  it('persists an executable quote and protects its calculation evidence', async () => {
+    const createdAt = new Date();
+    await pricing.saveEvaluation({
+      status: 'ACCEPTED',
+      routeId: ids.route,
+      routeVersion: 1,
+      rate: '1600.25',
+      outputScale: 2,
+      roundingMode: 'HALF_EVEN',
+      calculatedAt: createdAt,
+      validUntil: new Date(createdAt.getTime() + 30_000),
+      inputs: [{ routeLegId: ids.leg, observationId }],
+    });
+    const service = new QuoteService(quotes, () => createdAt);
+    const result = await service.createBuyQuote({ marketId: ids.market, debitAmount: '2000.00' });
+    const stored = await prisma.quote.findUniqueOrThrow({ where: { id: result.quoteId } });
+
+    expect(stored.totalDebitAtomic).toBe(200_000n);
+    expect(result.destinationAmount).toMatch(/^\d+\.\d{8}$/);
+    await expect(
+      prisma.quote.update({ where: { id: result.quoteId }, data: { spreadAmountAtomic: 0n } }),
+    ).rejects.toBeDefined();
+    await expect(prisma.quote.delete({ where: { id: result.quoteId } })).rejects.toBeDefined();
+
+    await expect(
+      prisma.$executeRaw`INSERT INTO quotes (
+        id, side, market_id, backing_asset_network_id,
+        reference_rate_snapshot_id, quote_policy_version_id, configuration_version_id,
+        total_debit_atomic, fixed_fee_atomic, percentage_fee_atomic, percentage_fee_bps,
+        total_fee_atomic, trade_amount_atomic, spread_bps, spread_amount_atomic,
+        destination_amount_atomic, quote_fiat_decimals, base_asset_decimals,
+        reference_rate, customer_rate, rate_display_scale, fee_rounding_mode,
+        destination_rounding_mode, expires_at, created_at
+      ) SELECT
+        ${randomUUID()}::uuid, side, market_id, backing_asset_network_id,
+        reference_rate_snapshot_id, quote_policy_version_id, configuration_version_id,
+        total_debit_atomic, fixed_fee_atomic, percentage_fee_atomic, percentage_fee_bps,
+        total_fee_atomic, trade_amount_atomic, spread_bps, spread_amount_atomic,
+        destination_amount_atomic + 1, quote_fiat_decimals, base_asset_decimals,
+        reference_rate, customer_rate, rate_display_scale, fee_rounding_mode,
+        destination_rounding_mode, expires_at, created_at
+      FROM quotes WHERE id = ${result.quoteId}::uuid`,
+    ).rejects.toBeDefined();
   });
 });

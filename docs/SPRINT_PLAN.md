@@ -154,9 +154,9 @@ and stale/conflicting evidence prevents unsafe allocation.
 
 ## Sprint 6: Purchase Reservation and Settlement
 
-**Status:** In progress from 2 September 2026. ADR-011 and the Purchase Engine
-contract are proposed; the treasury reservation-preservation prerequisite is
-delivered on the Sprint 6 branch.
+**Status:** Implementation complete on the Sprint 6 branch on 2 September 2026.
+The isolated PostgreSQL integration gate and production migration remain release
+operations and must be recorded before the sprint is closed.
 
 **Outcome:** An accepted quote reserves inventory exactly once and converges with
 Sendaza ledger settlement.

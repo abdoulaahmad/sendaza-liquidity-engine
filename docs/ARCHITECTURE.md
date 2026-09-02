@@ -200,10 +200,23 @@ quotes
 - provider_rate, customer_rate, spread_amount_atomic, fee_amount_atomic
 - inventory_snapshot_id, configuration_version, expires_at, status
 
-purchase_orders
-- id, quote_id, sendaza_customer_id, sendaza_lock_reference
-- client_reference, idempotency_key, status
-- reserved_amount_atomic, settled_at, created_at, updated_at
+purchases
+- id, quote_id, asset_network_id, customer_reference
+- client_lock_reference, client_reference, correlation_id
+- debit_atomic, credit_atomic, status, reservation_expires_at
+- completed_at, rolled_back_at, reconciliation_required_at
+
+purchase_settlements
+- id, purchase_id, outcome, client_settlement_reference
+- client_settled_at, recorded_at
+
+purchase_transitions
+- id, purchase_id, from_status, to_status, reason_code
+- correlation_id, occurred_at
+
+purchase_timeout_jobs
+- id, purchase_id, status, due_at, lease_token, lease_expires_at
+- attempt_count, created_at, updated_at
 ```
 
 ### Withdrawal
@@ -239,12 +252,12 @@ treasury_snapshots
 - id, treasury_wallet_id, asset_network_id
 - controlled_atomic, provider_available_atomic
 - pending_atomic, frozen_atomic, locked_atomic, chain_confirmed_atomic
-- reserved_atomic, safety_buffer_atomic, gas_reserve_atomic
+- reserved_atomic, allocated_atomic, safety_buffer_atomic, gas_reserve_atomic
 - unavailable_atomic, sellable_atomic, verification_status
 - provider_reference, observed_at, expires_at
 
 treasury_inventory_state
-- asset_network_id, latest_snapshot_id, sellable_atomic, reserved_atomic
+- asset_network_id, latest_snapshot_id, sellable_atomic, reserved_atomic, allocated_atomic
 - verification_status, evidence_expires_at, updated_at
 
 treasury_sync_jobs
@@ -261,7 +274,7 @@ network_fee_snapshots
 - block_reference, observed_at, expires_at
 
 inventory_reservations
-- id, asset_network_id, purchase_order_id, amount_atomic
+- id, asset_network_id, purchase_id, amount_atomic
 - status, expires_at
 
 liability_snapshots

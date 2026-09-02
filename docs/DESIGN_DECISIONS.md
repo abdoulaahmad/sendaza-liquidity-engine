@@ -180,7 +180,7 @@ Canonical details: [modules/treasury/MODULE.md](./modules/treasury/MODULE.md) an
 
 ## ADR-011: Purchase Settlement Holds Ambiguous Inventory
 
-**Decision:** Proposed on 2 September 2026
+**Decision:** Accepted on 2 September 2026
 
 A purchase consumes one unexpired immutable quote and reserves its exact crypto
 destination amount from fresh, independently matched inventory on the quote's

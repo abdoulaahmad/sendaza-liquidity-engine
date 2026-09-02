@@ -1,20 +1,134 @@
-<!doctype html><html lang=en><head><meta charset=utf-8><title>SLE Sprint 6</title><link rel=stylesheet href=report.css></head><body><main>
-<p class=eyebrow>Sendaza Liquidity Engine</p><h1>Sprint 6: Purchase Reservation and Settlement</h1><p class=subtitle>Turning a quote and a Sendaza fiat lock into safely allocated crypto backing</p><p class=progress>In progress from 2 September 2026</p>
-<div class=note><strong>Current status:</strong> Sprint started. The first prerequisite now preserves existing reservations during treasury refresh. ADR-011 and the Purchase Engine contract are proposed. Purchase schema, API, settlement worker, concurrency tests, migration, and final demonstration remain pending.</div>
-<h2>Connection to Earlier Sprints</h2><p>Sprint 4 supplies an exact immutable quote. Sprint 5 supplies fresh network-scoped sellable inventory. Sprint 6 will consume both only after Sendaza has created a journal-backed fiat lock. No customer balance is stored or changed inside SLE.</p>
-<h2>Proposed Flow</h2><pre class=flow>Sendaza locks exact quoted fiat
-             |
-             v
-unexpired quote + fresh matched asset-network inventory
-             |
-             v
-atomic crypto reservation + durable event
-             |
-             v
-Sendaza COMMITTED ------> allocated customer backing
-Sendaza ROLLED_BACK ----> reservation released
-unknown / timeout ------> reconciliation; inventory held</pre>
-<h2>Delivered So Far</h2><p>Treasury synchronization now locks current inventory, preserves active reservations, and recalculates sellable units inside the snapshot transaction. This prevents a background refresh from restoring inventory that a concurrent purchase already reserved.</p>
-<h2>Pending Evidence</h2><p>Real PostgreSQL oversell races, duplicate commands, quote expiry, settlement conflicts, restart/timeout behavior, immutable terminal states, outbox atomicity, API contracts, and migration verification are not yet delivered.</p>
-<h2>Glossary</h2><p><strong>Reservation:</strong> crypto inventory held for one purchase. <strong>Allocation:</strong> treasury backing committed to a customer crypto liability. <strong>Fiat lock:</strong> Sendaza's journal-backed hold on customer fiat. <strong>Ambiguous:</strong> an outcome that cannot safely be treated as success or failure. <strong>Compensating record:</strong> a new linked correction instead of editing history.</p>
-<footer>Sprint 6 remains in progress. Planned behavior must not be described as operational until its tests and release gate pass.</footer></main></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SLE Sprint 6 Report</title>
+  <link rel="stylesheet" href="report.css">
+</head>
+<body><main>
+  <p class="eyebrow">Sendaza Liquidity Engine</p>
+  <h1>Sprint 6: Purchase Reservation and Settlement</h1>
+  <p class="subtitle">How an accepted quote becomes safely allocated crypto backing</p>
+  <p class="progress">Implementation complete on 2 September 2026; Railway release gate pending</p>
+
+  <div class="note"><strong>Honest status:</strong> The schema, domain service, API,
+  worker, atomic repository, unit tests, integration scenario, and canonical
+  documentation are implemented. Lint, TypeScript, and 233 unit tests pass. The
+  real PostgreSQL rerun and production migration are not yet complete because the
+  Railway Postgres service currently has no public TCP proxy.</div>
+
+  <h2>1. Goal</h2>
+  <p>Consume one unexpired purchase quote after Sendaza locks the exact fiat debit,
+  reserve the quote's crypto amount on its configured asset-network, and safely
+  converge with Sendaza's ledger result. SLE does not hold customer fiat and never
+  writes Sendaza balances.</p>
+
+  <h2>2. Connection to Earlier Sprints</h2>
+  <p>Sprint 4 created immutable quotes containing exact debit, credit, spread, fee,
+  precision, expiry, and backing asset-network evidence. Sprint 5 created fresh,
+  independently matched treasury inventory for each asset-network. Sprint 6 joins
+  those results: a valid quote tells SLE what to reserve, and fresh inventory proves
+  the reservation can be backed.</p>
+
+  <h2>3. What Was Built</h2>
+  <p><strong>Domain:</strong> <code>packages/domain/src/purchase.ts</code> defines the
+  purchase states, stable failures, service boundary, response view, and leased
+  timeout batch.</p>
+  <p><strong>Database:</strong> <code>prisma-purchase.repository.ts</code> serializes
+  competing reservations with row locks and commits purchase, reservation,
+  inventory, transition, timeout job, and outbox event together. The forward
+  migration adds purchase history, immutable settlement evidence, timeout jobs,
+  and separately tracked allocated inventory.</p>
+  <p><strong>API:</strong> <code>POST /purchases</code>,
+  <code>POST /purchases/:id/settlement</code>, and
+  <code>GET /purchases/:id</code> expose a strict Sendaza-only contract. Clients
+  cannot select wallets, providers, networks, policies, amounts, or fees.</p>
+  <p><strong>Worker:</strong> the purchase timeout worker leases bounded batches.
+  A missing acknowledgement moves a reservation to reconciliation and keeps its
+  inventory held.</p>
+
+  <h2>4. End-to-End Example</h2>
+  <p>Suppose a configured quote says the customer pays <code>200000.00</code> fiat
+  and receives <code>6250000.000000</code> units of a configured token on one
+  network. Sendaza first locks exactly <code>200000.00</code> in its own ledger,
+  then sends the quote ID and its lock reference to SLE.</p>
+  <pre class="flow">Sendaza locks quoted fiat and sends purchase command
+                         |
+                         v
+SLE locks quote row + exact asset-network inventory row
+                         |
+            enough fresh MATCHED inventory?
+                    /                 \
+                  no                   yes
+                  |                     |
+           stable failure       RESERVED + outbox event
+                                        |
+                    +-------------------+-------------------+
+                    |                   |                   |
+             COMMITTED proof     ROLLED_BACK proof       timeout
+                    |                   |                   |
+               COMPLETED           ROLLED_BACK     RECONCILIATION_REQUIRED
+          reserved -> allocated    inventory released      inventory held</pre>
+  <p>Two concurrent purchases cannot spend the same capacity because PostgreSQL
+  locks the inventory row. A successful settlement converts reserved units into
+  allocated units; they remain unavailable because they now back a customer
+  liability.</p>
+
+  <h2>5. Fit in the Complete System</h2>
+  <p>Sendaza remains responsible for authentication, KYC, customer authorization,
+  fiat locks, double-entry journals, balances, and the customer interface. SLE
+  remains responsible for quote economics and treasury backing. Fireblocks MPC is
+  not called during a purchase because no blockchain transfer occurs; custody is
+  relevant later when an external withdrawal moves allocated crypto on-chain.</p>
+
+  <h2>6. Rules Protected</h2>
+  <ul>
+    <li>All amounts are atomic-unit <code>bigint</code> values internally and decimal strings at the API.</li>
+    <li>A quote is consumed once and a financial mutation is idempotency protected.</li>
+    <li>Inventory is scoped by asset-network; the same token on two networks is not interchangeable.</li>
+    <li>Reservation cannot make sellable inventory negative.</li>
+    <li>State changes and their outbound event share one PostgreSQL transaction.</li>
+    <li>Timeout is uncertainty, not proof of failure, so inventory stays held.</li>
+    <li>Completed and rolled-back history is immutable.</li>
+    <li>No private key, seed phrase, or customer ledger mutation enters SLE.</li>
+  </ul>
+
+  <h2>7. Test and Environment Evidence</h2>
+  <p><strong>Passed:</strong> ESLint; strict TypeScript compilation; API and worker
+  production builds; 42 unit suites with 233 tests, including purchase calculations
+  and states, parser rejection, API mappings, and treasury refresh preservation.</p>
+  <p><strong>Implemented but awaiting rerun:</strong> a real PostgreSQL test races
+  two purchases against limited inventory, verifies only one succeeds, commits one
+  reservation, rolls another back, times another out, and checks held inventory
+  plus lifecycle outbox events.</p>
+  <p><strong>Environment limitation:</strong> the Railway Postgres service exposes
+  only its private hostname and currently has no public TCP proxy. The local test
+  runner therefore cannot reach <code>sle_test</code>. This is an infrastructure
+  access gate, not a passing database result.</p>
+
+  <h2>8. Limitations and Next Dependency</h2>
+  <p>The generic HTTP idempotency record and the purchase transaction still commit
+  separately. Database uniqueness prevents duplicate allocation, but a crash after
+  purchase commit and before response persistence can leave an idempotency key in
+  progress. Automated recovery is required before real-funds launch.</p>
+  <p>Sprint 6 closes only after the isolated PostgreSQL scenario passes, migration
+  11 is verified in production, and the report is regenerated with that evidence.
+  Sprint 7 then builds cached network-fee snapshots for external withdrawals; it
+  does not change purchase pricing or reservation behavior.</p>
+
+  <h2>9. Glossary</h2>
+  <p><strong>Reservation:</strong> crypto inventory temporarily held for one
+  purchase. <strong>Allocation:</strong> treasury holdings committed as backing for
+  a customer crypto liability. <strong>Asset-network:</strong> one asset on one
+  blockchain, such as USDT on Ethereum versus USDT on Tron.
+  <strong>Row lock:</strong> a database rule that makes competing updates wait their
+  turn. <strong>Outbox:</strong> events stored with the financial change and delivered
+  later. <strong>Reconciliation:</strong> investigation of an outcome that cannot be
+  safely classified. <strong>Compensating record:</strong> a new linked correction
+  instead of rewriting history.</p>
+
+  <footer>Sprint 6 learning and handover report. Canonical behavior remains in the
+  architecture, API, ledger integration, design decision, and module documents.</footer>
+</main></body>
+</html>

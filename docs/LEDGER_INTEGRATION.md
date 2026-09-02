@@ -48,6 +48,11 @@ Move NGN 200,000:
 
 This local Sendaza transaction also creates the purchase intent and an outbox command.
 
+The command to SLE contains the immutable quote ID, an opaque customer
+reference, the journal-backed `clientLockReference`, and a unique
+`clientReference`. Sendaza cannot select the backing asset-network, treasury
+wallet, provider, amount, spread, or fee.
+
 ### Phase B: SLE reserves the quoted crypto
 
 SLE reserves the exact quoted ETH using its local transaction. No Sendaza balance changes occur.
@@ -68,6 +73,10 @@ Move ETH 0.032673267326732673:
 ```
 
 The same transaction updates read-model balances and writes a settlement acknowledgement to the outbox.
+The acknowledgement contains `COMMITTED`, its unique
+`clientSettlementReference`, and the ledger commit timestamp. Only proven local
+rollback may be sent as `ROLLED_BACK`; timeout or transport failure is not
+rollback evidence.
 
 ### Failure before SLE reservation
 

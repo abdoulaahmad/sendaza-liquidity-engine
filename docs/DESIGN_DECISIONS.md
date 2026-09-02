@@ -177,3 +177,23 @@ No treasury private key or seed phrase enters SLE.
 
 Canonical details: [modules/treasury/MODULE.md](./modules/treasury/MODULE.md) and
 [modules/custody/MODULE.md](./modules/custody/MODULE.md).
+
+## ADR-011: Purchase Settlement Holds Ambiguous Inventory
+
+**Decision:** Proposed on 2 September 2026
+
+A purchase consumes one unexpired immutable quote and reserves its exact crypto
+destination amount from fresh, independently matched inventory on the quote's
+asset-network. Quote, inventory, purchase, reservation, transition, and outbox
+changes use one PostgreSQL transaction with row locking and database uniqueness.
+
+On Sendaza `COMMITTED`, reserved inventory becomes allocated customer-liability
+backing and remains unavailable for another sale. On a proven Sendaza
+`ROLLED_BACK`, the reservation is released. Missing or late acknowledgement
+moves the purchase to `RECONCILIATION_REQUIRED` without releasing inventory.
+
+Terminal purchases and settlement evidence are immutable. Corrections use linked
+compensating records. SLE never writes Sendaza balances or claims cross-service
+ACID atomicity.
+
+Canonical details: [modules/purchase-engine/MODULE.md](./modules/purchase-engine/MODULE.md).

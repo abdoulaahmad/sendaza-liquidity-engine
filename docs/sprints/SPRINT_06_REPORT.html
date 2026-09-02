@@ -1,0 +1,20 @@
+<!doctype html><html lang=en><head><meta charset=utf-8><title>SLE Sprint 6</title><link rel=stylesheet href=report.css></head><body><main>
+<p class=eyebrow>Sendaza Liquidity Engine</p><h1>Sprint 6: Purchase Reservation and Settlement</h1><p class=subtitle>Turning a quote and a Sendaza fiat lock into safely allocated crypto backing</p><p class=progress>In progress from 2 September 2026</p>
+<div class=note><strong>Current status:</strong> Sprint started. The first prerequisite now preserves existing reservations during treasury refresh. ADR-011 and the Purchase Engine contract are proposed. Purchase schema, API, settlement worker, concurrency tests, migration, and final demonstration remain pending.</div>
+<h2>Connection to Earlier Sprints</h2><p>Sprint 4 supplies an exact immutable quote. Sprint 5 supplies fresh network-scoped sellable inventory. Sprint 6 will consume both only after Sendaza has created a journal-backed fiat lock. No customer balance is stored or changed inside SLE.</p>
+<h2>Proposed Flow</h2><pre class=flow>Sendaza locks exact quoted fiat
+             |
+             v
+unexpired quote + fresh matched asset-network inventory
+             |
+             v
+atomic crypto reservation + durable event
+             |
+             v
+Sendaza COMMITTED ------> allocated customer backing
+Sendaza ROLLED_BACK ----> reservation released
+unknown / timeout ------> reconciliation; inventory held</pre>
+<h2>Delivered So Far</h2><p>Treasury synchronization now locks current inventory, preserves active reservations, and recalculates sellable units inside the snapshot transaction. This prevents a background refresh from restoring inventory that a concurrent purchase already reserved.</p>
+<h2>Pending Evidence</h2><p>Real PostgreSQL oversell races, duplicate commands, quote expiry, settlement conflicts, restart/timeout behavior, immutable terminal states, outbox atomicity, API contracts, and migration verification are not yet delivered.</p>
+<h2>Glossary</h2><p><strong>Reservation:</strong> crypto inventory held for one purchase. <strong>Allocation:</strong> treasury backing committed to a customer crypto liability. <strong>Fiat lock:</strong> Sendaza's journal-backed hold on customer fiat. <strong>Ambiguous:</strong> an outcome that cannot safely be treated as success or failure. <strong>Compensating record:</strong> a new linked correction instead of editing history.</p>
+<footer>Sprint 6 remains in progress. Planned behavior must not be described as operational until its tests and release gate pass.</footer></main></body></html>

@@ -11,6 +11,7 @@ developer while preserving honest delivery status and links to the wider system.
 | 3 | `SPRINT_03_REPORT.html` | `SPRINT_03_REPORT.pdf` | Delivered |
 | 4 | `SPRINT_04_REPORT.html` | `SPRINT_04_REPORT.pdf` | Delivered |
 | 5 | `SPRINT_05_REPORT.html` | `SPRINT_05_REPORT.pdf` | Delivered; live sandbox demo externally pending |
+| 6 | `SPRINT_06_REPORT.html` | `SPRINT_06_REPORT.pdf` | In progress |
 
 The HTML file is the editable source. Regenerate its matching PDF after every
 material report change. A report supplements, but never replaces, canonical

@@ -142,7 +142,11 @@ export class PrismaPurchaseRepository implements PurchaseRepository {
             createdAt: input.createdAt,
           });
         },
-        { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 15_000 },
+        {
+          isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+          maxWait: 15_000,
+          timeout: 15_000,
+        },
       );
     } catch (error: unknown) {
       if (isUnique(error)) return failure('PURCHASE_REFERENCE_CONFLICT');
@@ -252,7 +256,11 @@ export class PrismaPurchaseRepository implements PurchaseRepository {
           });
           return success(mapPurchase(updated));
         },
-        { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 15_000 },
+        {
+          isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+          maxWait: 15_000,
+          timeout: 15_000,
+        },
       );
     } catch (error: unknown) {
       if (isUnique(error)) return failure('PURCHASE_SETTLEMENT_CONFLICT');
@@ -353,7 +361,7 @@ export class PrismaPurchaseTimeoutRepository implements PurchaseTimeoutRepositor
           data: { status: 'COMPLETED', leaseToken: null, leaseExpiresAt: null },
         });
       },
-      { timeout: 15_000 },
+      { maxWait: 15_000, timeout: 15_000 },
     );
   }
 }

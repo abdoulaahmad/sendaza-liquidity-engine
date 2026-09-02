@@ -3,7 +3,7 @@ import {
   ChainBalanceProviderResolver,
   CustodyProvider,
   CustodyProviderResolver,
-  NewTreasurySnapshot,
+  TreasurySnapshotEvidence,
   TreasuryEvidenceError,
   TreasuryRepository,
   TreasurySynchronizationService,
@@ -60,7 +60,15 @@ describe('TreasurySynchronizationService', () => {
     jest.clearAllMocks();
     getWalletBalance.mockResolvedValue(evidence);
     getConfirmedBalanceAtomic.mockResolvedValue(2_000_000_000_000_000_000n);
-    saveSnapshot.mockResolvedValue('snapshot-1');
+    saveSnapshot.mockImplementation(async (snapshot: TreasurySnapshotEvidence) => ({
+      ...snapshot,
+      snapshotId: 'snapshot-1',
+      reservedAtomic: 0n,
+      sellableAtomic:
+        snapshot.verificationStatus === 'MISMATCH' || snapshot.verificationStatus === 'STALE'
+          ? 0n
+          : 1_650_000_000_000_000_000n,
+    }));
   });
 
   it('publishes network-scoped sellable inventory after independent agreement', async () => {
@@ -77,7 +85,7 @@ describe('TreasurySynchronizationService', () => {
         unavailableAtomic: 200_000_000_000_000_000n,
         safetyBufferAtomic: 100_000_000_000_000_000n,
         gasReserveAtomic: 50_000_000_000_000_000n,
-      }) as NewTreasurySnapshot,
+      }) as TreasurySnapshotEvidence,
     );
   });
 

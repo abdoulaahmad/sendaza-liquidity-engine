@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import {
-  NewTreasurySnapshot,
+  StoredTreasurySnapshot,
+  TreasurySnapshotEvidence,
   TreasuryRepository,
   TreasurySyncClaim,
   TreasurySyncJobRepository,
   TreasurySyncTarget,
+  calculateSellableInventory,
 } from '../../domain/src';
 import { Prisma } from './generated/prisma/client';
 import { PrismaService } from './prisma.service';
@@ -58,8 +60,22 @@ export class PrismaTreasuryRepository implements TreasuryRepository {
     }));
   }
 
-  async saveSnapshot(snapshot: NewTreasurySnapshot): Promise<string> {
+  async saveSnapshot(snapshot: TreasurySnapshotEvidence): Promise<StoredTreasurySnapshot> {
     return this.prisma.$transaction(async (transaction) => {
+      const rows = await transaction.$queryRaw<{ reservedatomic: bigint }[]>(Prisma.sql`
+        SELECT reserved_atomic AS reservedAtomic
+        FROM treasury_inventory_state
+        WHERE asset_network_id = ${snapshot.assetNetworkId}::uuid
+        FOR UPDATE
+      `);
+      const reservedAtomic = rows[0]?.reservedatomic ?? 0n;
+      const sellableAtomic = calculateSellableInventory(
+        snapshot.providerAvailableAtomic,
+        reservedAtomic,
+        snapshot.safetyBufferAtomic,
+        snapshot.gasReserveAtomic,
+        snapshot.verificationStatus,
+      );
       const created = await transaction.treasurySnapshot.create({
         data: {
           treasuryWalletId: snapshot.walletId,
@@ -70,11 +86,11 @@ export class PrismaTreasuryRepository implements TreasuryRepository {
           frozenAtomic: snapshot.frozenAtomic,
           lockedAtomic: snapshot.lockedAtomic,
           chainConfirmedAtomic: snapshot.chainConfirmedAtomic,
-          reservedAtomic: snapshot.reservedAtomic,
+          reservedAtomic,
           safetyBufferAtomic: snapshot.safetyBufferAtomic,
           gasReserveAtomic: snapshot.gasReserveAtomic,
           unavailableAtomic: snapshot.unavailableAtomic,
-          sellableAtomic: snapshot.sellableAtomic,
+          sellableAtomic,
           verificationStatus: snapshot.verificationStatus,
           providerReference: snapshot.providerReference,
           observedAt: snapshot.observedAt,
@@ -84,8 +100,8 @@ export class PrismaTreasuryRepository implements TreasuryRepository {
       });
       const state = {
         latestSnapshotId: created.id,
-        sellableAtomic: snapshot.sellableAtomic,
-        reservedAtomic: snapshot.reservedAtomic,
+        sellableAtomic,
+        reservedAtomic,
         verificationStatus: snapshot.verificationStatus,
         evidenceExpiresAt: snapshot.expiresAt,
       };
@@ -94,7 +110,7 @@ export class PrismaTreasuryRepository implements TreasuryRepository {
         create: { assetNetworkId: snapshot.assetNetworkId, ...state },
         update: state,
       });
-      return created.id;
+      return { ...snapshot, snapshotId: created.id, reservedAtomic, sellableAtomic };
     });
   }
 }

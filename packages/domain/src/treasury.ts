@@ -50,7 +50,7 @@ export abstract class ChainBalanceProviderResolver {
   abstract resolve(networkCode: string, addressFamily: string): ChainBalanceProvider;
 }
 
-export interface NewTreasurySnapshot {
+export interface TreasurySnapshotEvidence {
   readonly walletId: string;
   readonly assetNetworkId: string;
   readonly controlledAtomic: bigint;
@@ -59,20 +59,24 @@ export interface NewTreasurySnapshot {
   readonly frozenAtomic: bigint;
   readonly lockedAtomic: bigint;
   readonly chainConfirmedAtomic?: bigint;
-  readonly reservedAtomic: bigint;
   readonly safetyBufferAtomic: bigint;
   readonly gasReserveAtomic: bigint;
   readonly unavailableAtomic: bigint;
-  readonly sellableAtomic: bigint;
   readonly verificationStatus: TreasuryVerificationStatus;
   readonly providerReference?: string;
   readonly observedAt: Date;
   readonly expiresAt: Date;
 }
 
+export interface StoredTreasurySnapshot extends TreasurySnapshotEvidence {
+  readonly snapshotId: string;
+  readonly reservedAtomic: bigint;
+  readonly sellableAtomic: bigint;
+}
+
 export abstract class TreasuryRepository {
   abstract listSyncTargets(): Promise<readonly TreasurySyncTarget[]>;
-  abstract saveSnapshot(snapshot: NewTreasurySnapshot): Promise<string>;
+  abstract saveSnapshot(snapshot: TreasurySnapshotEvidence): Promise<StoredTreasurySnapshot>;
 }
 
 export interface TreasurySyncClaim {
@@ -144,11 +148,7 @@ export class TreasurySynchronizationService {
 
     const operationalUnavailable = amounts.total - amounts.available;
     const reserve = target.safetyBufferAtomic + target.gasReserveAtomic;
-    const sellable =
-      status === 'MATCHED' || (!target.verificationRequired && status === 'UNVERIFIED')
-        ? nonNegative(amounts.available - reserve)
-        : 0n;
-    const snapshot: NewTreasurySnapshot = {
+    const snapshot: TreasurySnapshotEvidence = {
       walletId: target.walletId,
       assetNetworkId: target.assetNetworkId,
       controlledAtomic: amounts.total,
@@ -157,22 +157,20 @@ export class TreasurySynchronizationService {
       frozenAtomic: amounts.frozen,
       lockedAtomic: amounts.locked,
       chainConfirmedAtomic,
-      reservedAtomic: 0n,
       safetyBufferAtomic: target.safetyBufferAtomic,
       gasReserveAtomic: target.gasReserveAtomic,
       unavailableAtomic: operationalUnavailable,
-      sellableAtomic: sellable,
       verificationStatus: status,
       providerReference: evidence.providerReference,
       observedAt: evidence.observedAt,
       expiresAt,
     };
-    const snapshotId = await this.repository.saveSnapshot(snapshot);
+    const stored = await this.repository.saveSnapshot(snapshot);
     return {
       walletId: target.walletId,
-      snapshotId,
+      snapshotId: stored.snapshotId,
       verificationStatus: status,
-      sellableAtomic: sellable,
+      sellableAtomic: stored.sellableAtomic,
     };
   }
 
@@ -273,8 +271,16 @@ function sameAddress(providerAddress: string, configuredAddress: string): boolea
   return providerAddress === configuredAddress;
 }
 
-function nonNegative(value: bigint): bigint {
-  return value > 0n ? value : 0n;
+export function calculateSellableInventory(
+  providerAvailableAtomic: bigint,
+  reservedAtomic: bigint,
+  safetyBufferAtomic: bigint,
+  gasReserveAtomic: bigint,
+  status: TreasuryVerificationStatus,
+): bigint {
+  if (status === 'MISMATCH' || status === 'STALE') return 0n;
+  const result = providerAvailableAtomic - reservedAtomic - safetyBufferAtomic - gasReserveAtomic;
+  return result > 0n ? result : 0n;
 }
 
 function errorCode(error: unknown): string {

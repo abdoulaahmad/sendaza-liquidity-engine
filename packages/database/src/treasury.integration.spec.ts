@@ -100,7 +100,7 @@ describe('treasury PostgreSQL integration', () => {
 
   it('atomically publishes an immutable verified snapshot and current inventory', async () => {
     const observedAt = new Date();
-    const snapshotId = await treasury.saveSnapshot({
+    const stored = await treasury.saveSnapshot({
       walletId: ids.wallet,
       assetNetworkId: ids.assetNetwork,
       controlledAtomic: 10_000n,
@@ -109,16 +109,15 @@ describe('treasury PostgreSQL integration', () => {
       frozenAtomic: 200n,
       lockedAtomic: 300n,
       chainConfirmedAtomic: 10_000n,
-      reservedAtomic: 0n,
       safetyBufferAtomic: 100n,
       gasReserveAtomic: 50n,
       unavailableAtomic: 1_000n,
-      sellableAtomic: 8_850n,
       verificationStatus: 'MATCHED',
       providerReference: 'block-100',
       observedAt,
       expiresAt: new Date(observedAt.getTime() + 60_000),
     });
+    const snapshotId = stored.snapshotId;
     await expect(
       prisma.treasuryInventoryState.findUnique({ where: { assetNetworkId: ids.assetNetwork } }),
     ).resolves.toMatchObject({
@@ -134,7 +133,7 @@ describe('treasury PostgreSQL integration', () => {
     ).rejects.toBeDefined();
   });
 
-  it('rejects inconsistent inventory calculations in PostgreSQL', async () => {
+  it('rejects snapshot evidence that differs from wallet policy', async () => {
     const observedAt = new Date();
     await expect(
       treasury.saveSnapshot({
@@ -146,11 +145,9 @@ describe('treasury PostgreSQL integration', () => {
         frozenAtomic: 200n,
         lockedAtomic: 300n,
         chainConfirmedAtomic: 10_000n,
-        reservedAtomic: 0n,
         safetyBufferAtomic: 100n,
-        gasReserveAtomic: 50n,
+        gasReserveAtomic: 51n,
         unavailableAtomic: 1_000n,
-        sellableAtomic: 8_851n,
         verificationStatus: 'MATCHED',
         observedAt,
         expiresAt: new Date(observedAt.getTime() + 60_000),

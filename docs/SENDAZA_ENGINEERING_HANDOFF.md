@@ -35,7 +35,7 @@ database transaction between Sendaza and SLE.
 | Sendaza service authentication, replay protection, idempotency, audit, and durable outbox | Delivered |
 | Provider observations, multi-leg pricing routes, safety guards, durable refresh worker, reference snapshots | Delivered |
 | Executable purchase quotes, spreads, fees, limits, and quote endpoint | Sprint 4, not implemented |
-| Fireblocks wallet and treasury synchronization | Sprint 5, not implemented |
+| Fireblocks wallet and treasury synchronization | Sprint 5 delivered; sandbox activation and funded-wallet demo require deployment credentials |
 | Purchase reservation and ledger-settlement handshake | Sprint 6, not implemented |
 | Network fee quotes and external withdrawals | Sprints 7 to 9, not implemented |
 | Reconciliation and production hardening | Later sprints |

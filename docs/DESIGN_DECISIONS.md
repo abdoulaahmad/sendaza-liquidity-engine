@@ -151,3 +151,29 @@ source reference snapshot expiry. Quote creation does not reserve inventory;
 Sprint 6 performs reservation after Sendaza locks the exact quoted debit.
 
 Canonical details: [modules/quote-engine/MODULE.md](./modules/quote-engine/MODULE.md)
+
+## ADR-010: Treasury Availability Requires Fresh Network-Scoped Evidence
+
+**Decision:** Accepted
+
+Each enabled treasury wallet belongs to exactly one asset-network and one
+server-configured custody provider route. SLE calculates sellable inventory from
+provider available balance minus active reservations, the asset-network safety
+buffer, and any same-asset native gas reserve.
+
+Important wallets require an independent chain balance check. Stale evidence or
+provider/chain disagreement publishes zero sellable inventory. Provider-only
+evidence remains explicitly `UNVERIFIED` and is permitted only when wallet policy
+does not require independent verification.
+
+Treasury snapshots are immutable. The latest inventory projection and its source
+snapshot commit together, and every consumer must recheck evidence expiry.
+Funding is represented by audited forward-only intents; Sprint 5 does not move
+funds automatically.
+
+Fireblocks remains behind the domain-owned `CustodyProvider` interface. Its RSA
+API authentication key is a deployment secret, not treasury signing material.
+No treasury private key or seed phrase enters SLE.
+
+Canonical details: [modules/treasury/MODULE.md](./modules/treasury/MODULE.md) and
+[modules/custody/MODULE.md](./modules/custody/MODULE.md).

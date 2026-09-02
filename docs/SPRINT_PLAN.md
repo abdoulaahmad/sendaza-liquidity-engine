@@ -127,6 +127,12 @@ transport uses decimal strings.
 
 ## Sprint 5: Fireblocks Treasury Synchronization
 
+**Status:** Complete on 2 September 2026. Network-scoped treasury state,
+Fireblocks and fake adapters, independent EVM verification, leased synchronization,
+funding intents, database guards, and tests are delivered. Live Fireblocks
+sandbox funding evidence remains an external activation task because no sandbox
+credentials or funded vault are available in the repository environment.
+
 **Outcome:** SLE observes and verifies controlled Fireblocks wallets and treasury
 inventory by asset-network.
 

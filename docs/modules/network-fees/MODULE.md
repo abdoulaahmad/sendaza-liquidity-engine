@@ -97,6 +97,18 @@ the MVP rather than presenting an ambiguous total.
 - Estimated, buffered, charged, and later actual costs remain separate fields.
 - Financial state and its outbox event commit in one PostgreSQL transaction.
 
+## Delivered in Sprint 7
+
+- `PrismaNetworkFeeRepository` and `PrismaNetworkFeeRefreshJobRepository`
+  persist observations, immutable snapshots, and leased refresh jobs with
+  `FOR UPDATE SKIP LOCKED` claiming.
+- `NetworkFeeRefreshWorker` polls due asset-network/transfer-type jobs, calls
+  the configured fee estimator, and publishes an immutable snapshot through
+  `NetworkFeeRefreshBatchService`.
+- `POST /withdrawal-fee-quotes` consumes the latest fresh accepted snapshot and
+  active policy, calculates the exact withdrawal fee quote, and returns
+  decimal-string amounts behind idempotency and audit interceptors.
+
 ## Deferred Work
 
 Sprint 7 does not submit Fireblocks transfers or record actual mined fees. Sprint

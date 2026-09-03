@@ -18,6 +18,8 @@ import {
   TreasurySyncJobRepository,
   PurchaseRepository,
   PurchaseTimeoutRepository,
+  NetworkFeeRepository,
+  NetworkFeeRefreshJobRepository,
 } from '../../domain/src';
 import { PrismaIdempotencyRepository } from './prisma-idempotency.repository';
 import { PrismaAuditRepository } from './prisma-audit.repository';
@@ -33,6 +35,8 @@ import {
   PrismaPurchaseRepository,
   PrismaPurchaseTimeoutRepository,
 } from './prisma-purchase.repository';
+import { PrismaNetworkFeeRepository } from './prisma-network-fee.repository';
+import { PrismaNetworkFeeRefreshJobRepository } from './prisma-network-fee-refresh-job.repository';
 
 @Module({
   providers: [
@@ -50,6 +54,8 @@ import {
     PrismaTreasurySyncJobRepository,
     PrismaPurchaseRepository,
     PrismaPurchaseTimeoutRepository,
+    PrismaNetworkFeeRepository,
+    PrismaNetworkFeeRefreshJobRepository,
     { provide: AuthenticationNonceRepository, useExisting: PrismaAuthenticationNonceRepository },
     { provide: CredentialMetadataRepository, useExisting: PrismaCredentialMetadataRepository },
     { provide: IdempotencyRepository, useExisting: PrismaIdempotencyRepository },
@@ -61,6 +67,11 @@ import {
     { provide: TreasurySyncJobRepository, useExisting: PrismaTreasurySyncJobRepository },
     { provide: PurchaseRepository, useExisting: PrismaPurchaseRepository },
     { provide: PurchaseTimeoutRepository, useExisting: PrismaPurchaseTimeoutRepository },
+    { provide: NetworkFeeRepository, useExisting: PrismaNetworkFeeRepository },
+    {
+      provide: NetworkFeeRefreshJobRepository,
+      useExisting: PrismaNetworkFeeRefreshJobRepository,
+    },
     {
       provide: PricingRefreshJobRepository,
       useExisting: PrismaPricingRefreshJobRepository,
@@ -80,6 +91,8 @@ import {
     TreasurySyncJobRepository,
     PurchaseRepository,
     PurchaseTimeoutRepository,
+    NetworkFeeRepository,
+    NetworkFeeRefreshJobRepository,
   ],
 })
 export class DatabaseModule {}

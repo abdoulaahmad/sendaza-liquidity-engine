@@ -15,14 +15,24 @@ import { PurchaseRepository, PurchaseService } from '../../../packages/domain/sr
 import { PurchaseConfiguration } from '../../../packages/configuration/src';
 import { PrismaPurchaseRepository } from '../../../packages/database/src';
 import { PurchaseController } from './purchase.controller';
+import { NetworkFeeRepository, WithdrawalFeeQuoteService } from '../../../packages/domain/src';
+import { PrismaNetworkFeeRepository } from '../../../packages/database/src';
+import { WithdrawalFeeQuoteController } from './withdrawal-fee-quote.controller';
 
 @Module({
   imports: [DatabaseModule],
-  controllers: [HealthController, RegistryController, QuoteController, PurchaseController],
+  controllers: [
+    HealthController,
+    RegistryController,
+    QuoteController,
+    PurchaseController,
+    WithdrawalFeeQuoteController,
+  ],
   providers: [
     RegistryService,
     QuoteService,
     PurchaseConfiguration,
+    WithdrawalFeeQuoteService,
     {
       provide: PurchaseService,
       useFactory: (repository: PurchaseRepository, configuration: PurchaseConfiguration) =>
@@ -36,6 +46,7 @@ import { PurchaseController } from './purchase.controller';
     { provide: RegistryRepository, useExisting: PrismaRegistryRepository },
     { provide: QuoteRepository, useExisting: PrismaQuoteRepository },
     { provide: PurchaseRepository, useExisting: PrismaPurchaseRepository },
+    { provide: NetworkFeeRepository, useExisting: PrismaNetworkFeeRepository },
   ],
 })
 export class ApiModule {}

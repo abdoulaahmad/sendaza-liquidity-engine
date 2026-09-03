@@ -35,6 +35,20 @@ import {
 } from './treasury-provider.resolver';
 import { TreasurySyncWorker } from './treasury-sync.worker';
 import { PurchaseTimeoutWorker } from './purchase-timeout.worker';
+import { NetworkFeeConfiguration } from '../../../packages/configuration/src';
+import {
+  NetworkFeeEstimator,
+  NetworkFeeEstimatorResolver,
+  NetworkFeeRefreshBatchService,
+  NetworkFeeRefreshJobRepository,
+  NetworkFeeRefreshService,
+  NetworkFeeRepository,
+} from '../../../packages/domain/src';
+import {
+  DeterministicNetworkFeeEstimator,
+  WorkerNetworkFeeEstimatorResolver,
+} from './network-fee-estimator';
+import { NetworkFeeRefreshWorker } from './network-fee-refresh.worker';
 
 @Module({
   imports: [DatabaseModule],
@@ -43,6 +57,7 @@ import { PurchaseTimeoutWorker } from './purchase-timeout.worker';
     PricingRefreshConfiguration,
     TreasurySyncConfiguration,
     PurchaseConfiguration,
+    NetworkFeeConfiguration,
     SendazaWebhookPublisher,
     { provide: OutboxPublisher, useExisting: SendazaWebhookPublisher },
     {
@@ -158,6 +173,47 @@ import { PurchaseTimeoutWorker } from './purchase-timeout.worker';
       inject: [PurchaseTimeoutRepository, PurchaseConfiguration],
     },
     PurchaseTimeoutWorker,
+    {
+      provide: 'PROVIDER_NETWORK_FEE_ESTIMATOR',
+      useFactory: (configuration: NetworkFeeConfiguration) =>
+        new DeterministicNetworkFeeEstimator('PROVIDER', configuration.fakeProviderFeeAtomic),
+      inject: [NetworkFeeConfiguration],
+    },
+    {
+      provide: 'RPC_NETWORK_FEE_ESTIMATOR',
+      useFactory: (configuration: NetworkFeeConfiguration) =>
+        new DeterministicNetworkFeeEstimator('RPC', configuration.fakeRpcFeeAtomic),
+      inject: [NetworkFeeConfiguration],
+    },
+    {
+      provide: NetworkFeeEstimatorResolver,
+      useFactory: (provider: NetworkFeeEstimator, rpc: NetworkFeeEstimator) =>
+        new WorkerNetworkFeeEstimatorResolver(provider, rpc),
+      inject: ['PROVIDER_NETWORK_FEE_ESTIMATOR', 'RPC_NETWORK_FEE_ESTIMATOR'],
+    },
+    {
+      provide: NetworkFeeRefreshService,
+      useFactory: (repository: NetworkFeeRepository, estimators: NetworkFeeEstimatorResolver) =>
+        new NetworkFeeRefreshService(repository, estimators),
+      inject: [NetworkFeeRepository, NetworkFeeEstimatorResolver],
+    },
+    {
+      provide: NetworkFeeRefreshBatchService,
+      useFactory: (
+        jobs: NetworkFeeRefreshJobRepository,
+        refresh: NetworkFeeRefreshService,
+        configuration: NetworkFeeConfiguration,
+      ) =>
+        new NetworkFeeRefreshBatchService(
+          jobs,
+          refresh,
+          configuration.batchSize,
+          configuration.leaseSeconds,
+          configuration.retrySeconds,
+        ),
+      inject: [NetworkFeeRefreshJobRepository, NetworkFeeRefreshService, NetworkFeeConfiguration],
+    },
+    NetworkFeeRefreshWorker,
   ],
 })
 export class WorkerModule {}

@@ -12,7 +12,16 @@ const fs = require('node:fs');
 
 const rootDir = path.resolve(__dirname, '..');
 const suiteRegex = /\.integration\.spec\.ts$/;
-const perSuiteTimeoutMs = Number(process.env.SLE_INTEGRATION_SUITE_TIMEOUT_MS ?? 180_000);
+const timeoutValue = process.env.SLE_INTEGRATION_SUITE_TIMEOUT_MS ?? '180000';
+if (!/^[0-9]+$/.test(timeoutValue)) {
+  console.error('SLE_INTEGRATION_SUITE_TIMEOUT_MS must be a positive integer.');
+  process.exit(1);
+}
+const perSuiteTimeoutMs = Number.parseInt(timeoutValue, 10);
+if (perSuiteTimeoutMs < 1_000 || perSuiteTimeoutMs > 3_600_000) {
+  console.error('SLE_INTEGRATION_SUITE_TIMEOUT_MS must be between 1000 and 3600000.');
+  process.exit(1);
+}
 
 function findSuites(dir, out) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -34,15 +43,15 @@ if (suites.length === 0) {
   process.exit(0);
 }
 
-const jestBin = path.join(rootDir, 'node_modules', '.bin', 'jest');
+const jestEntryPoint = require.resolve('jest/bin/jest');
 let failures = 0;
 
 for (const suite of suites) {
   const relativePath = path.relative(rootDir, suite);
   console.log(`\n--- Running ${relativePath} (own process, timeout ${perSuiteTimeoutMs}ms) ---`);
   const result = spawnSync(
-    jestBin,
-    ['--config', 'jest.integration.config.cjs', '--runInBand', relativePath],
+    process.execPath,
+    [jestEntryPoint, '--config', 'jest.integration.config.cjs', '--runInBand', relativePath],
     {
       cwd: rootDir,
       stdio: 'inherit',

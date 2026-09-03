@@ -34,6 +34,7 @@ jobs:
       CI: 'true'
       DATABASE_URL: postgresql://sle:sle_ci_password@127.0.0.1:5432/sle_test
       TEST_DATABASE_URL: postgresql://sle:sle_ci_password@127.0.0.1:5432/sle_test
+      SLE_INTEGRATION_SUITE_TIMEOUT_MS: '180000'
 
     steps:
       - name: Check out repository

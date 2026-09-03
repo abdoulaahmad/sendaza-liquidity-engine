@@ -146,6 +146,11 @@ pnpm start:api
 pnpm start:worker
 ```
 
+`pnpm test:integration` runs every integration spec in its own bounded operating
+system process. `SLE_INTEGRATION_SUITE_TIMEOUT_MS` controls the per-suite limit
+and defaults to 180000 milliseconds. Keep this isolation when adding integration
+suites so a degraded PostgreSQL pool cannot contaminate later suites.
+
 Until a command exists, do not document it as working. When adding or changing a
 command, update this file, the root README, and CI together.
 

@@ -159,6 +159,13 @@ describe('network fee PostgreSQL integration', () => {
       totalDebit: '25.260298',
     });
     await expect(
+      repository.loadQuoteContext(
+        ids.assetNetwork,
+        'TOKEN',
+        new Date('2026-09-03T08:01:01.000Z'),
+      ),
+    ).resolves.toBeNull();
+    await expect(
       prisma.networkFeeSnapshot.update({
         where: { id: snapshot.id },
         data: { chargedNetworkFeeAtomic: 1n },
@@ -176,9 +183,4 @@ describe('network fee PostgreSQL integration', () => {
     expect([...first, ...second].filter((claim) => claim.policyId === ids.policy)).toHaveLength(1);
   });
 
-  it('refuses to quote after the cached snapshot expires', async () => {
-    await expect(
-      repository.loadQuoteContext(ids.assetNetwork, 'TOKEN', new Date('2026-09-03T08:01:01.000Z')),
-    ).resolves.toBeNull();
-  });
 });

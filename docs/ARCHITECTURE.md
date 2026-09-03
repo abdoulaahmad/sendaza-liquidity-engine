@@ -39,7 +39,8 @@ SLE is a separately deployable private service. It has its own database and cred
 | --- | --- |
 | Asset Registry | Assets, fiat currencies, networks, asset-network mappings |
 | Market Registry | Enabled pairs, spreads, fees, order limits, quote TTL |
-| Quote Engine | Provider pricing, normalization, fee calculation, signed quote snapshot |
+| Market Data | Immutable provider observations, conversion routes, safety guards, reference-rate snapshots |
+| Quote Engine | Spread, purchase-fee and amount calculation from an accepted reference snapshot |
 | Purchase Engine | Quote acceptance, inventory reservation, settlement handshake |
 | Withdrawal Engine | Fee estimate, policy evaluation, custody submission, finality tracking |
 | Treasury | Wallet registry, confirmed balances, reservations, safety and gas buffers |
@@ -199,10 +200,23 @@ quotes
 - provider_rate, customer_rate, spread_amount_atomic, fee_amount_atomic
 - inventory_snapshot_id, configuration_version, expires_at, status
 
-purchase_orders
-- id, quote_id, sendaza_customer_id, sendaza_lock_reference
-- client_reference, idempotency_key, status
-- reserved_amount_atomic, settled_at, created_at, updated_at
+purchases
+- id, quote_id, asset_network_id, customer_reference
+- client_lock_reference, client_reference, correlation_id
+- debit_atomic, credit_atomic, status, reservation_expires_at
+- completed_at, rolled_back_at, reconciliation_required_at
+
+purchase_settlements
+- id, purchase_id, outcome, client_settlement_reference
+- client_settled_at, recorded_at
+
+purchase_transitions
+- id, purchase_id, from_status, to_status, reason_code
+- correlation_id, occurred_at
+
+purchase_timeout_jobs
+- id, purchase_id, status, due_at, lease_token, lease_expires_at
+- attempt_count, created_at, updated_at
 ```
 
 ### Withdrawal
@@ -229,12 +243,30 @@ withdrawal_transaction_hashes
 
 ```text
 treasury_wallets
-- id, asset_network_id, custody_provider_id, provider_wallet_id
-- public_address, wallet_role, status
+- id, asset_network_id, custody_provider_id
+- provider_vault_id, provider_asset_id, public_address, address_tag
+- role, verification_required, safety_buffer_atomic, gas_reserve_atomic
+- stale_after_seconds, status
 
 treasury_snapshots
-- id, treasury_wallet_id, confirmed_atomic, pending_out_atomic
-- block_reference, observed_at
+- id, treasury_wallet_id, asset_network_id
+- controlled_atomic, provider_available_atomic
+- pending_atomic, frozen_atomic, locked_atomic, chain_confirmed_atomic
+- reserved_atomic, allocated_atomic, safety_buffer_atomic, gas_reserve_atomic
+- unavailable_atomic, sellable_atomic, verification_status
+- provider_reference, observed_at, expires_at
+
+treasury_inventory_state
+- asset_network_id, latest_snapshot_id, sellable_atomic, reserved_atomic, allocated_atomic
+- verification_status, evidence_expires_at, updated_at
+
+treasury_sync_jobs
+- treasury_wallet_id, status, next_sync_at
+- lease_token, lease_expires_at, attempt_count, last_error_code
+
+treasury_funding_intents
+- treasury_wallet_id, asset_network_id, expected_atomic, status
+- transaction_hash, actor_id, reason, observed_at, confirmed_at
 
 network_fee_snapshots
 - id, asset_network_id, transfer_type, native_fee_asset_id
@@ -242,7 +274,7 @@ network_fee_snapshots
 - block_reference, observed_at, expires_at
 
 inventory_reservations
-- id, asset_network_id, purchase_order_id, amount_atomic
+- id, asset_network_id, purchase_id, amount_atomic
 - status, expires_at
 
 liability_snapshots

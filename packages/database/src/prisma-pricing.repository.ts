@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import {
   ConversionRouteDefinition,
   ActiveManualPrice,
@@ -93,9 +94,7 @@ export class PrismaPricingRepository implements PricingRepository {
       priceScale: observation.providerPricePair.priceScale,
       pairMaxAgeSeconds: observation.providerPricePair.maxAgeSeconds,
       observedAt: observation.providerObservedAt,
-      ...(observation.providerSequence
-        ? { providerSequence: observation.providerSequence }
-        : {}),
+      ...(observation.providerSequence ? { providerSequence: observation.providerSequence } : {}),
       deduplicationKey: observation.deduplicationKey,
       sequenceGap: observation.sequenceGap,
     }));
@@ -225,34 +224,42 @@ export class PrismaPricingRepository implements PricingRepository {
   }
 
   async saveEvaluation(evaluation: ReferenceRateEvaluation): Promise<string> {
-    return this.prisma.$transaction(async (transaction) => {
-      const snapshot = await transaction.referenceRateSnapshot.create({
-        data: {
-          routeId: evaluation.routeId,
-          outputScale: evaluation.outputScale,
-          roundingMode: evaluation.roundingMode,
-          status: evaluation.status,
-          calculatedAt: evaluation.calculatedAt,
-          ...(evaluation.guardObservationId
-            ? { guardObservationId: evaluation.guardObservationId }
-            : {}),
-          ...(evaluation.status === 'ACCEPTED'
-            ? { rate: evaluation.rate, validUntil: evaluation.validUntil }
-            : { rejectionReason: evaluation.failureCode }),
-        },
-        select: { id: true },
-      });
+    const snapshotId = randomUUID();
+    await this.prisma.withPgTransaction(async (client) => {
+      await client.query(
+        `INSERT INTO reference_rate_snapshots (
+          id, route_id, rate, output_scale, rounding_mode, status,
+          rejection_reason, calculated_at, valid_until, guard_observation_id
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [
+          snapshotId,
+          evaluation.routeId,
+          evaluation.status === 'ACCEPTED' ? evaluation.rate : null,
+          evaluation.outputScale,
+          evaluation.roundingMode,
+          evaluation.status,
+          evaluation.status === 'REJECTED' ? evaluation.failureCode : null,
+          evaluation.calculatedAt,
+          evaluation.status === 'ACCEPTED' ? evaluation.validUntil : null,
+          evaluation.guardObservationId ?? null,
+        ],
+      );
       if (evaluation.inputs.length > 0) {
-        await transaction.referenceRateSnapshotInput.createMany({
-          data: evaluation.inputs.map((input) => ({
-            snapshotId: snapshot.id,
-            routeLegId: input.routeLegId,
-            observationId: input.observationId,
-          })),
-        });
+        await client.query(
+          `INSERT INTO reference_rate_snapshot_inputs
+            (snapshot_id, route_leg_id, observation_id)
+          SELECT $1, evidence.route_leg_id, evidence.observation_id
+          FROM unnest($2::uuid[], $3::uuid[])
+            AS evidence(route_leg_id, observation_id)`,
+          [
+            snapshotId,
+            evaluation.inputs.map((input) => input.routeLegId),
+            evaluation.inputs.map((input) => input.observationId),
+          ],
+        );
       }
-      return snapshot.id;
     });
+    return snapshotId;
   }
 
   private async findOneObservation(query: {

@@ -8,7 +8,10 @@ developer while preserving honest delivery status and links to the wider system.
 | 0 | `SPRINT_00_REPORT.html` | `SPRINT_00_REPORT.pdf` | Partially delivered |
 | 1 | `SPRINT_01_REPORT.html` | `SPRINT_01_REPORT.pdf` | Delivered |
 | 2 | `SPRINT_02_REPORT.html` | `SPRINT_02_REPORT.pdf` | Delivered |
-| 3 | `SPRINT_03_REPORT.html` | `SPRINT_03_REPORT.pdf` | In progress |
+| 3 | `SPRINT_03_REPORT.html` | `SPRINT_03_REPORT.pdf` | Delivered |
+| 4 | `SPRINT_04_REPORT.html` | `SPRINT_04_REPORT.pdf` | Delivered |
+| 5 | `SPRINT_05_REPORT.html` | `SPRINT_05_REPORT.pdf` | Delivered; live sandbox demo externally pending |
+| 6 | `SPRINT_06_REPORT.html` | `SPRINT_06_REPORT.pdf` | In progress |
 
 The HTML file is the editable source. Regenerate its matching PDF after every
 material report change. A report supplements, but never replaces, canonical

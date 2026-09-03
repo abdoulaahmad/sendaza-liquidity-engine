@@ -22,6 +22,10 @@
 
 - SLE must not store, load, accept, or expose raw private keys, seed phrases, or exportable signing material in any environment.
 - Use an MPC custody-provider sandbox for the MVP and a contracted MPC workspace for production.
+- Treat the Fireblocks RSA API private key as an authentication credential, not
+  treasury signing material. Keep it only in encrypted deployment configuration.
+- Never persist authorization JWTs, raw provider errors, RPC credentials, or API
+  private keys in snapshots, jobs, logs, or audit payloads.
 - Store provider API credentials only in encrypted deployment secrets; never in PostgreSQL, source control, logs, or API responses.
 - Persist only provider wallet IDs, public addresses, transfer IDs, and blockchain transaction hashes.
 - Separate hot operational funds from warm/cold reserves.
@@ -99,6 +103,11 @@ MVP replenishment is manual. Automatic trading or exchange withdrawal is explici
 ## 7. Reconciliation
 
 Run continuously for transaction states and at least daily for formal solvency attestation.
+
+Treasury availability refreshes use leased PostgreSQL jobs. Important wallets
+publish sellable inventory only after fresh Fireblocks evidence agrees with an
+independent chain adapter. Stale or conflicting evidence forces sellable
+inventory to zero for the affected asset-network.
 
 Inputs:
 

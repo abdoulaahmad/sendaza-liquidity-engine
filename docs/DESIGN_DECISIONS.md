@@ -31,8 +31,8 @@ Canonical stack:
 
 ```text
 NestJS + TypeScript
-Vercel Functions Hobby
-Neon PostgreSQL Free
+Railway API and worker services
+Railway PostgreSQL
 Prisma
 Alchemy Free on Sepolia
 Coinbase public reference prices
@@ -40,6 +40,11 @@ Manual versioned NGN test cross-rate
 Fireblocks Developer Sandbox through an MPC custody adapter
 PostgreSQL transactional outbox
 ```
+
+Railway replaced the earlier Vercel Functions and Neon proposal because SLE
+needs an always-running worker and one PostgreSQL operational boundary for the
+sandbox. The current Railway project contains the database service; API and
+worker deployment remain a later sandbox activation task.
 
 This configuration is not approved for mainnet or customer funds.
 
@@ -125,3 +130,94 @@ does not infer stability from an asset symbol.
 The free MVP may demonstrate Coinbase public reference prices plus a reviewed,
 versioned manual fiat cross-rate. This single-source design is test-only.
 Independent redundant production pricing remains a mainnet launch gate.
+
+## ADR-009: Purchase Quotes Use Total Debit and Versioned Economics
+
+**Decision:** Accepted
+
+A BUY quote request supplies the exact total fiat debit. SLE deducts the
+versioned fixed and percentage purchase fees, converts the remaining trade
+amount using the spread-adjusted reference rate, and returns the exact crypto
+destination amount.
+
+Percentage fees round upward to fiat atomic units. Destination crypto rounds
+downward to asset atomic units. The customer principal is never silently
+rounded. Quote amounts, rates, fee components, spread, scales, rounding rules,
+reference snapshot, policy version, configuration version, and expiry are
+stored as immutable evidence.
+
+Order minimum and maximum apply to total debit. Quote expiry cannot exceed the
+source reference snapshot expiry. Quote creation does not reserve inventory;
+Sprint 6 performs reservation after Sendaza locks the exact quoted debit.
+
+Canonical details: [modules/quote-engine/MODULE.md](./modules/quote-engine/MODULE.md)
+
+## ADR-010: Treasury Availability Requires Fresh Network-Scoped Evidence
+
+**Decision:** Accepted
+
+Each enabled treasury wallet belongs to exactly one asset-network and one
+server-configured custody provider route. SLE calculates sellable inventory from
+provider available balance minus active reservations, the asset-network safety
+buffer, and any same-asset native gas reserve.
+
+Important wallets require an independent chain balance check. Stale evidence or
+provider/chain disagreement publishes zero sellable inventory. Provider-only
+evidence remains explicitly `UNVERIFIED` and is permitted only when wallet policy
+does not require independent verification.
+
+Treasury snapshots are immutable. The latest inventory projection and its source
+snapshot commit together, and every consumer must recheck evidence expiry.
+Funding is represented by audited forward-only intents; Sprint 5 does not move
+funds automatically.
+
+Fireblocks remains behind the domain-owned `CustodyProvider` interface. Its RSA
+API authentication key is a deployment secret, not treasury signing material.
+No treasury private key or seed phrase enters SLE.
+
+Canonical details: [modules/treasury/MODULE.md](./modules/treasury/MODULE.md) and
+[modules/custody/MODULE.md](./modules/custody/MODULE.md).
+
+## ADR-011: Purchase Settlement Holds Ambiguous Inventory
+
+**Decision:** Accepted on 2 September 2026
+
+A purchase consumes one unexpired immutable quote and reserves its exact crypto
+destination amount from fresh, independently matched inventory on the quote's
+asset-network. Quote, inventory, purchase, reservation, transition, and outbox
+changes use one PostgreSQL transaction with row locking and database uniqueness.
+
+On Sendaza `COMMITTED`, reserved inventory becomes allocated customer-liability
+backing and remains unavailable for another sale. On a proven Sendaza
+`ROLLED_BACK`, the reservation is released. Missing or late acknowledgement
+moves the purchase to `RECONCILIATION_REQUIRED` without releasing inventory.
+
+Terminal purchases and settlement evidence are immutable. Corrections use linked
+compensating records. SLE never writes Sendaza balances or claims cross-service
+ACID atomicity.
+
+Canonical details: [modules/purchase-engine/MODULE.md](./modules/purchase-engine/MODULE.md).
+
+## ADR-012: Withdrawal Fees Use Cached Network-Scoped Evidence
+
+**Decision:** Accepted on 3 September 2026
+
+Network fees are estimated and cached separately for every configured
+asset-network and transfer type. A refresh combines a fee-provider estimate with
+an independent RPC estimate where the network supports both. A snapshot is
+publishable only when the required observations are fresh and within the
+configured deviation tolerance.
+
+The snapshot stores the estimated native fee, the versioned safety buffer, the
+buffered native fee, and the evidence used. When the withdrawn asset is not the
+network's native fee asset, SLE converts the buffered native fee into the
+configured customer charge asset using a fresh immutable conversion snapshot.
+All rounding favors treasury safety and is recorded explicitly.
+
+A withdrawal fee quote consumes the latest fresh accepted snapshot and freezes
+principal, estimated fee, buffer, charged network fee, service fee, total debit,
+recipient amount, policy version, conversion evidence, and expiry. Execution may
+reject or require review when current cost exceeds tolerance, but it never
+silently increases the customer-approved debit.
+
+Canonical details: [modules/network-fees/MODULE.md](./modules/network-fees/MODULE.md).

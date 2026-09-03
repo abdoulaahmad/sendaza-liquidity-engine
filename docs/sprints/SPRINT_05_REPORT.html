@@ -1,0 +1,29 @@
+<!doctype html><html lang=en><head><meta charset=utf-8><title>SLE Sprint 5</title><link rel=stylesheet href=report.css></head><body><main>
+<p class=eyebrow>Sendaza Liquidity Engine</p><h1>Sprint 5: Fireblocks Treasury Synchronization</h1><p class=subtitle>Turning custody and blockchain evidence into safe network-scoped inventory</p><p class=progress>Delivered 2 September 2026</p>
+<div class=note><strong>Final status:</strong> The implementation, migrations, tests, worker, and documentation are delivered. Both isolated test and Railway production databases have all 10 migrations. No provider or wallet was activated. A live funded Fireblocks sandbox demonstration remains externally pending because this environment has no sandbox credential or funded vault.</div>
+<h2>Connection to Earlier Sprints</h2><p>Sprint 1 created separate assets, networks, and asset-network mappings. Sprint 2 supplied durable jobs and operational reliability patterns. Sprint 3 made pricing evidence reproducible. Sprint 4 created quotes but deliberately did not promise inventory. Sprint 5 now establishes verified treasury evidence that Sprint 6 will lock when it creates a purchase reservation.</p>
+<h2>What Was Built</h2><ul><li><code>treasury.ts</code> defines provider boundaries, exact inventory calculation, fail-closed evidence states, and retryable batch orchestration.</li><li><code>prisma-treasury.repository.ts</code> selects enabled wallets, atomically stores snapshots and current state, and leases jobs with <code>SKIP LOCKED</code>.</li><li><code>fireblocks-custody.provider.ts</code> signs read-only Fireblocks requests with short-lived RS256 JWTs and returns decimal-string evidence.</li><li><code>evm-chain-balance.provider.ts</code> independently checks native and ERC-20 balances using public JSON-RPC methods.</li><li>The migration adds custody providers, wallets, immutable snapshots, current inventory, sync jobs, and forward-only funding intents.</li></ul>
+<h2>Simple Flow</h2><pre class=flow>PostgreSQL leases one configured wallet job
+                    |
+                    v
+ Fireblocks balance + registered public address
+                    |
+                    v
+ independent blockchain balance for important wallets
+                    |
+                    v
+ fresh and equal? ---- no ----> sellable = 0
+         |
+        yes
+         v
+ available - reservations - safety buffer - gas reserve
+                    |
+                    v
+ immutable snapshot + current asset-network inventory</pre>
+<h2>Concrete Example</h2><p>Suppose a Sepolia ETH wallet has 2 ETH controlled and Fireblocks says 1.8 ETH is available. A 0.10 ETH safety buffer and 0.05 ETH gas reserve leave 1.65 ETH sellable. If the chain adapter reports even one atomic unit less than the provider total, status becomes <code>MISMATCH</code> and sellable becomes zero. ETH on Sepolia cannot support ETH or USDT on any other network.</p>
+<h2>Financial and Security Rules</h2><ul><li>All provider decimal strings convert exactly to atomic <code>bigint</code>; excess precision is rejected.</li><li>Stale or conflicting evidence cannot support a purchase.</li><li>Provider available balance cannot exceed controlled balance.</li><li>Important wallets cannot publish unverified sellable inventory.</li><li>Snapshots are immutable and PostgreSQL independently checks inventory arithmetic.</li><li>SLE stores public addresses and provider identifiers, never wallet private keys or seed phrases.</li><li>The Fireblocks RSA API private key authenticates SLE only and stays in encrypted deployment configuration.</li></ul>
+<h2>Verification Evidence</h2><ul><li>40 unit suites passed with 218 tests.</li><li>15 focused treasury, batch, Fireblocks, and EVM tests passed.</li><li>Two real PostgreSQL suites passed all 10 integration tests against <code>sle_test</code>.</li><li>Concurrent workers produced only one wallet claim; expired leases remain reclaimable by design.</li><li>ESLint and strict TypeScript passed; API and worker production builds compiled.</li><li>Railway production reports 10 migrations and an up-to-date schema.</li></ul>
+<h2>Limitations and Next Dependency</h2><p>The repository contains no populated credentials, live provider record, enabled wallet, RPC secret, or faucet funding. The initial independent chain adapter supports EVM native assets and ERC-20 tokens; other network families need their own adapters before activation. Sprint 6 must lock the current asset-network inventory row, reject expired or unsafe evidence, and reserve inventory atomically without using another network.</p>
+<h2>How to Complete the Live Demo</h2><p>An authorized operator must create a Fireblocks Developer Sandbox API user, store its API key and RSA API private key in Railway secrets, configure an HTTPS Sepolia RPC URL, register the exact Fireblocks vault ID, provider asset ID, and public address in a disabled wallet row, fund it with testnet assets, verify provider and chain agreement, then enable the wallet and its sync job through a reviewed migration or administration procedure.</p>
+<h2>Glossary</h2><p><strong>MPC:</strong> signing in which no single system holds a complete treasury key. <strong>Vault:</strong> a Fireblocks account containing asset wallets. <strong>Controlled:</strong> total assets reported for the configured wallet. <strong>Unallocated:</strong> provider-available assets before SLE buffers and reservations. <strong>Sellable:</strong> inventory allowed to support a new reservation. <strong>Funding intent:</strong> an auditable expectation of manual treasury funding, not a command to move funds.</p>
+<footer>Sprint 5 closed 2 September 2026. Canonical behavior lives in ADR-010 and the Treasury and Custody module documents.</footer></main></body></html>

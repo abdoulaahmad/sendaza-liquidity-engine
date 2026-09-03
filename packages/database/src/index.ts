@@ -7,3 +7,6 @@ export * from './prisma-audit.repository';
 export * from './prisma-outbox.repository';
 export * from './prisma-pricing.repository';
 export * from './prisma-pricing-refresh-job.repository';
+export * from './prisma-quote.repository';
+export * from './prisma-treasury.repository';
+export * from './prisma-purchase.repository';

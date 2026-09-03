@@ -45,10 +45,8 @@ Returns enabled purchase markets, limits, and status. It does not return executa
 ```json
 {
   "side": "BUY",
-  "baseAsset": "ETH",
-  "quoteCurrency": "NGN",
-  "quoteAmount": "200000.0000",
-  "customerReference": "usr_123"
+  "marketId": "0ed15b4a-483a-4938-a06c-13645a8c8118",
+  "debitAmount": "200000.00"
 }
 ```
 
@@ -58,18 +56,27 @@ Response:
 {
   "success": true,
   "data": {
-    "quoteId": "qt_01K4Y5ZVCC",
-    "market": "ETH/NGN",
-    "debitAmount": "200000.0000",
-    "destinationAmount": "0.032673267326732673",
-    "marketRate": "6000000.0000",
+    "quoteId": "79622a38-f616-48b8-a4fc-da62df55fef2",
+    "side": "BUY",
+    "marketId": "0ed15b4a-483a-4938-a06c-13645a8c8118",
+    "debitAmount": "200000.00",
+    "tradeAmount": "197000.00",
+    "fixedFeeAmount": "1000.00",
+    "percentageFeeAmount": "2000.00",
+    "totalFeeAmount": "3000.00",
+    "referenceRate": "6000000.0000",
     "customerRate": "6060000.0000",
-    "feeAmount": "2000.0000",
-    "expiresAt": "2026-08-29T15:30:15Z",
-    "configurationVersion": 4
+    "spreadAmount": "1950.49",
+    "destinationAmount": "0.032508250825082508",
+    "expiresAt": "2026-09-02T15:30:15.000Z",
+    "configurationVersion": 5
   }
 }
 ```
+
+The body is strict: unknown fields and client-selected providers, routes,
+policies, backing networks, or rounding modes are rejected. All monetary values
+are decimal strings. `Idempotency-Key` and `X-Correlation-Id` are required.
 
 ### `POST /purchases`
 
@@ -77,9 +84,9 @@ Creates an inventory reservation after Sendaza has locked the fiat amount.
 
 ```json
 {
-  "quoteId": "qt_01K4Y5ZVCC",
+  "quoteId": "00000000-0000-4000-8000-000000000001",
   "customerReference": "usr_123",
-  "sendazaLockReference": "lock_ngn_456",
+  "clientLockReference": "lock_fiat_456",
   "clientReference": "buy_789"
 }
 ```
@@ -90,12 +97,16 @@ Response:
 {
   "success": true,
   "data": {
-    "purchaseId": "pur_01K4Y63E9J",
+    "purchaseId": "00000000-0000-4000-8000-000000000002",
+    "quoteId": "00000000-0000-4000-8000-000000000001",
+    "assetNetworkId": "00000000-0000-4000-8000-000000000003",
     "status": "RESERVED",
-    "debitAmount": "200000.0000",
-    "creditAsset": "ETH",
-    "creditAmount": "0.032673267326732673",
-    "reservationExpiresAt": "2026-08-29T15:31:00Z"
+    "debitAmount": "200000.00",
+    "creditAmount": "6250000.000000",
+    "clientReference": "buy_789",
+    "clientLockReference": "lock_fiat_456",
+    "reservationExpiresAt": "2026-09-02T15:31:00.000Z",
+    "createdAt": "2026-09-02T15:30:00.000Z"
   }
 }
 ```
@@ -107,12 +118,15 @@ Sendaza acknowledges that its ledger transaction committed.
 ```json
 {
   "status": "COMMITTED",
-  "sendazaTransactionReference": "TXN_abc123",
-  "settledAt": "2026-08-29T15:30:22Z"
+  "clientSettlementReference": "TXN_abc123",
+  "settledAt": "2026-09-02T15:30:22.000Z"
 }
 ```
 
-For a proven Sendaza rollback before settlement, `status` may be `ROLLED_BACK`. Ambiguous outcomes must be queried and reconciled rather than reported as rollback.
+For a proven Sendaza rollback before settlement, `status` may be `ROLLED_BACK`.
+Ambiguous outcomes must be queried and reconciled rather than reported as
+rollback. A committed purchase returns `COMPLETED`; a late or missing settlement
+acknowledgement becomes `RECONCILIATION_REQUIRED` and retains its inventory hold.
 
 ### `GET /purchases/:id`
 
@@ -265,7 +279,8 @@ Event types:
 ```text
 sle.purchase.reserved
 sle.purchase.completed
-sle.purchase.failed
+sle.purchase.rolled_back
+sle.purchase.reconciliation_required
 sle.withdrawal.policy_approved
 sle.withdrawal.rejected
 sle.withdrawal.submitted

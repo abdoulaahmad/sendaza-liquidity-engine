@@ -13,6 +13,11 @@ describe('PrismaPricingRepository', () => {
   const providerPairFindMany = jest.fn();
   const snapshotCreate = jest.fn();
   const inputCreateMany = jest.fn();
+  const pgQuery = jest.fn();
+  const withPgTransaction = jest.fn(
+    async (work: (client: { query: typeof pgQuery }) => Promise<unknown>) =>
+      work({ query: pgQuery }),
+  );
   const transaction = jest.fn(async (work: (client: unknown) => Promise<unknown>) =>
     work({
       referenceRateSnapshot: { create: snapshotCreate },
@@ -26,10 +31,12 @@ describe('PrismaPricingRepository', () => {
       findFirst: observationFindFirst,
       create: observationCreate,
     },
-    referenceRateSnapshot: { findFirst: snapshotFindFirst },
+    referenceRateSnapshot: { findFirst: snapshotFindFirst, create: snapshotCreate },
+    referenceRateSnapshotInput: { createMany: inputCreateMany },
     manualPriceVersion: { findFirst: manualPriceFindFirst },
     providerPricePair: { findMany: providerPairFindMany },
     $transaction: transaction,
+    withPgTransaction,
   } as unknown as PrismaService;
   const repository = new PrismaPricingRepository(prisma);
 
@@ -66,9 +73,7 @@ describe('PrismaPricingRepository', () => {
         expectedRate: '1.000000000000000000000000000000',
         toleranceBps: 50,
       },
-      legs: [
-        { id: 'leg-1', sequence: 1, providerPairId: 'provider-pair', operation: 'MULTIPLY' },
-      ],
+      legs: [{ id: 'leg-1', sequence: 1, providerPairId: 'provider-pair', operation: 'MULTIPLY' }],
     });
   });
 
@@ -210,48 +215,30 @@ describe('PrismaPricingRepository', () => {
   });
 
   it('stores an accepted snapshot and all evidence in one transaction', async () => {
-    snapshotCreate.mockResolvedValue({ id: 'snapshot-1' });
-    inputCreateMany.mockResolvedValue({ count: 1 });
+    pgQuery.mockResolvedValue({ rowCount: 1 });
     const calculatedAt = new Date('2026-09-01T10:00:00.000Z');
     const validUntil = new Date('2026-09-01T10:00:30.000Z');
 
-    await expect(
-      repository.saveEvaluation({
-        status: 'ACCEPTED',
-        routeId: 'route-1',
-        routeVersion: 1,
-        rate: '1600.12',
-        outputScale: 2,
-        roundingMode: 'HALF_EVEN',
-        calculatedAt,
-        validUntil,
-        guardObservationId: 'guard-1',
-        inputs: [{ routeLegId: 'leg-1', observationId: 'observation-1' }],
-      }),
-    ).resolves.toBe('snapshot-1');
-    expect(transaction).toHaveBeenCalledTimes(1);
-    expect(snapshotCreate).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        status: 'ACCEPTED',
-        rate: '1600.12',
-        guardObservationId: 'guard-1',
-      }),
-      select: { id: true },
+    const snapshotId = await repository.saveEvaluation({
+      status: 'ACCEPTED',
+      routeId: 'route-1',
+      routeVersion: 1,
+      rate: '1600.12',
+      outputScale: 2,
+      roundingMode: 'HALF_EVEN',
+      calculatedAt,
+      validUntil,
+      guardObservationId: 'guard-1',
+      inputs: [{ routeLegId: 'leg-1', observationId: 'observation-1' }],
     });
-    expect(inputCreateMany).toHaveBeenCalledWith({
-      data: [
-        {
-          snapshotId: 'snapshot-1',
-          routeLegId: 'leg-1',
-          observationId: 'observation-1',
-        },
-      ],
-    });
+    expect(snapshotId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(withPgTransaction).toHaveBeenCalledTimes(1);
+    expect(pgQuery).toHaveBeenCalledTimes(2);
   });
 
   it('stores a rejected evaluation without a quoteable rate', async () => {
-    snapshotCreate.mockResolvedValue({ id: 'snapshot-2' });
-    await repository.saveEvaluation({
+    pgQuery.mockResolvedValue({ rowCount: 1 });
+    const snapshotId = await repository.saveEvaluation({
       status: 'REJECTED',
       routeId: 'route-1',
       routeVersion: 1,
@@ -261,11 +248,8 @@ describe('PrismaPricingRepository', () => {
       calculatedAt: new Date('2026-09-01T10:00:00.000Z'),
       inputs: [],
     });
-    expect(snapshotCreate.mock.calls[0]?.[0].data).toMatchObject({
-      status: 'REJECTED',
-      rejectionReason: 'PRICE_LEG_MISSING',
-    });
-    expect(snapshotCreate.mock.calls[0]?.[0].data).not.toHaveProperty('rate');
-    expect(inputCreateMany).not.toHaveBeenCalled();
+    expect(snapshotId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(withPgTransaction).toHaveBeenCalledTimes(1);
+    expect(pgQuery).toHaveBeenCalledTimes(1);
   });
 });

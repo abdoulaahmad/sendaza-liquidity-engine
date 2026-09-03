@@ -23,6 +23,9 @@ responsibilities belong to later modules.
 - Reproducible reference-rate snapshots linked to every input observation
 - Worker refresh orchestration with retry-safe database persistence
 
+**Delivery status:** implemented and verified in Sprint 3. No production route
+or refresh job is enabled; configuration activation is deliberately deferred.
+
 Executable purchase quotes, customer economics, redundant production pricing,
 order-book depth, trading execution, and automatic provider onboarding are
 excluded.
@@ -179,6 +182,16 @@ after its freshness deadline.
 - The free MVP uses single-source pricing and is not approved for real funds.
   Redundant independent production sources are a launch gate.
 
+Refresh work is stored in `pricing_refresh_jobs`. Workers claim bounded batches
+with PostgreSQL row locks and leases. A crashed worker cannot hold a job forever:
+after the lease expires, another worker may claim it with a new lease token.
+Successful and rejected evaluations schedule the normal refresh interval;
+infrastructure failures use bounded retry and store only a safe error code.
+
+Production activation requires reviewed provider pairs, a versioned conversion
+route, and a corresponding refresh job. At Sprint 3 closure, production has zero
+enabled routes, zero refresh jobs, and zero currently valid snapshots.
+
 ## Acceptance Criteria
 
 - Direct and multi-leg rates are reproducible from stored observations.
@@ -198,3 +211,17 @@ Sprint 1 supplies assets, fiat currencies, markets, and configuration versions.
 Sprint 2 supplies authentication, idempotency, audit, and durable workers. Sprint
 3 supplies reference snapshots. Sprint 4 consumes snapshot IDs to create
 immutable executable quotes with SLE-owned spreads and fees.
+
+## Sprint 3 Verification
+
+- Exact route and guard suite: 36 focused tests passed.
+- Full unit suite: 31 suites and 158 tests passed.
+- Railway `sle_test`: five real PostgreSQL tests passed for concurrent evidence
+  deduplication, exclusive job claiming, expired-lease recovery, atomic snapshot
+  evidence, and immutable observations.
+- The snapshot-input database guard was repaired by forward migration
+  `20260901000300_snapshot_input_validation`; all seven migrations are applied
+  to Railway production.
+- Type checking and lint passed. API and worker bundles compiled; the Nest CLI's
+  optional checker reports `spawn EPERM` in the local Windows sandbox, while the
+  standalone strict TypeScript check passes.

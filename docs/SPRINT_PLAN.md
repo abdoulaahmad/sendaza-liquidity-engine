@@ -80,6 +80,9 @@ key cannot produce two effects, and committed events cannot be lost.
 
 ## Sprint 3: Market Data and Conversion Routes
 
+**Status:** Delivered on 1 September 2026. Production pricing configuration
+remains inactive pending reviewed sandbox activation.
+
 **Outcome:** SLE produces auditable reference rates through configured direct and
 multi-leg pricing routes.
 
@@ -100,6 +103,10 @@ quoting, and no asset or fiat branch is hardcoded.
 
 ## Sprint 4: Executable Quote Engine
 
+**Status:** Complete on 2 September 2026. Quote economics, persistence,
+private API, database guards, tests, and handover report are delivered. Runtime
+policy activation remains an explicit operational action and was not performed.
+
 **Outcome:** Sendaza receives immutable purchase quotes containing SLE-owned
 spreads, fees, exact amounts, and expiry.
 
@@ -119,6 +126,12 @@ reproduce its calculation from stored evidence.
 transport uses decimal strings.
 
 ## Sprint 5: Fireblocks Treasury Synchronization
+
+**Status:** Complete on 2 September 2026. Network-scoped treasury state,
+Fireblocks and fake adapters, independent EVM verification, leased synchronization,
+funding intents, database guards, and tests are delivered. Live Fireblocks
+sandbox funding evidence remains an external activation task because no sandbox
+credentials or funded vault are available in the repository environment.
 
 **Outcome:** SLE observes and verifies controlled Fireblocks wallets and treasury
 inventory by asset-network.
@@ -141,6 +154,10 @@ and stale/conflicting evidence prevents unsafe allocation.
 
 ## Sprint 6: Purchase Reservation and Settlement
 
+**Status:** Complete on 2 September 2026. The isolated PostgreSQL purchase
+lifecycle scenario passed, migration 11 was applied to Railway production, and
+the temporary verification proxy was removed.
+
 **Outcome:** An accepted quote reserves inventory exactly once and converges with
 Sendaza ledger settlement.
 
@@ -162,6 +179,9 @@ purchase intents, and settlement references.
 are immutable.
 
 ## Sprint 7: Cached Network Fee Engine
+
+**Status:** In progress from 3 September 2026. ADR-012 and the Network Fee module
+contract are accepted; implementation is underway.
 
 **Outcome:** Sendaza receives fast fee quotes from fresh asset-network snapshots.
 

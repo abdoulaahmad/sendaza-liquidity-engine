@@ -4,6 +4,7 @@ import {
   parseCreateQuoteBody,
   parseSettlePurchaseBody,
   parseCreateWithdrawalFeeQuoteBody,
+  parseCreateWithdrawalBody,
 } from './index';
 
 describe('parseCreateQuoteBody', () => {
@@ -51,6 +52,29 @@ describe('withdrawal fee quote contract', () => {
     { ...valid, destinationAddress: '' },
   ])('rejects ambiguous or client-controlled input %#', (body) => {
     expect(() => parseCreateWithdrawalFeeQuoteBody(body)).toThrow(ContractValidationError);
+  });
+});
+
+describe('withdrawal contract', () => {
+  const valid = {
+    feeQuoteId: '00000000-0000-4000-8000-000000000001',
+    customerReference: 'customer-1',
+    clientLockReference: 'lock-1',
+    clientReference: 'withdrawal-1',
+    destinationAddress: '0x1111111111111111111111111111111111111111',
+  };
+
+  it('accepts only the exact withdrawal command', () => {
+    expect(parseCreateWithdrawalBody(valid)).toEqual(valid);
+  });
+
+  it.each([
+    { ...valid, feeQuoteId: 'wfq-1' },
+    { ...valid, assetNetworkId: '00000000-0000-4000-8000-000000000002' },
+    { ...valid, destinationAddress: '' },
+    { ...valid, provider: 'client-selected' },
+  ])('rejects malformed or client-controlled input %#', (body) => {
+    expect(() => parseCreateWithdrawalBody(body)).toThrow(ContractValidationError);
   });
 });
 

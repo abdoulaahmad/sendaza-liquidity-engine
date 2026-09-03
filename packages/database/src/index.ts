@@ -12,3 +12,4 @@ export * from './prisma-treasury.repository';
 export * from './prisma-purchase.repository';
 export * from './prisma-network-fee.repository';
 export * from './prisma-network-fee-refresh-job.repository';
+export * from './prisma-withdrawal.repository';

@@ -179,13 +179,15 @@ submission without silently increasing the customer-approved debit.
 
 ### `POST /withdrawals`
 
-Called only after Sendaza locks `totalDebit`.
+Called only after Sendaza locks `totalDebit`. Consumes the immutable Sprint 7
+withdrawal fee quote; the body cannot select an asset-network, principal, fee,
+custody wallet, provider, or policy.
 
 ```json
 {
-  "feeQuoteId": "wfq_01K4Y6",
+  "feeQuoteId": "00000000-0000-4000-8000-000000000002",
   "customerReference": "usr_123",
-  "sendazaLockReference": "lock_eth_555",
+  "clientLockReference": "lock_eth_555",
   "clientReference": "withdrawal_777",
   "destinationAddress": "0x1111111111111111111111111111111111111111"
 }
@@ -197,23 +199,42 @@ Response:
 {
   "success": true,
   "data": {
-    "withdrawalId": "wdr_01K4Y7",
-    "status": "CREATED",
-    "asset": "ETH",
-    "network": "ETHEREUM",
-    "principal": "0.020000000000000000",
-    "totalDebit": "0.020800000000000000"
+    "withdrawalId": "00000000-0000-4000-8000-000000000004",
+    "feeQuoteId": "00000000-0000-4000-8000-000000000002",
+    "assetNetworkId": "00000000-0000-4000-8000-000000000001",
+    "status": "POLICY_APPROVED",
+    "principal": "25.000000",
+    "totalDebit": "25.560000",
+    "clientReference": "withdrawal_777",
+    "clientLockReference": "lock_eth_555",
+    "destinationAddress": "0x1111111111111111111111111111111111111111",
+    "createdAt": "2026-09-03T08:00:30.000Z"
   }
 }
 ```
 
+`status` starts at `CREATED` and moves to `POLICY_APPROVED` immediately when the
+total debit is within the policy auto-approval threshold; otherwise it remains
+`CREATED` pending manual review. Sprint 8 then advances the withdrawal through
+`SUBMITTING` to `SUBMITTED`, `CANCELLED`, `REJECTED`, or `SUBMISSION_UNKNOWN`.
+`BROADCASTED` onward is Sprint 9 scope.
+
 ### `GET /withdrawals/:id`
 
-Returns status, provider reference, transaction hashes, observed confirmations, and terminal error when applicable.
+Returns the authoritative SLE withdrawal state: `status`, `principal`,
+`totalDebit`, and the terminal timestamp field matching the current status
+(`submittedAt`, `cancelledAt`, `rejectedAt`, `failedBeforeBroadcastAt`, or
+`reconciliationRequiredAt`) when applicable.
 
 ### `POST /withdrawals/:id/cancel`
 
-Permitted only before provider submission. Cancellation is a request, not a guarantee. A submitted or ambiguous withdrawal cannot be cancelled through this endpoint.
+Permitted only in `CREATED` or `POLICY_APPROVED` and only while the submission
+job remains unclaimed by a worker. Once a worker claims the job (entering
+`SUBMITTING`), cancellation is rejected with `WITHDRAWAL_ALREADY_CLAIMED`; the
+caller must instead await a terminal state, since the transfer may already be
+irreversible. A successful cancellation returns the immutable `CANCELLED`
+state and an `sle.withdrawal.cancelled` event that tells Sendaza releasing its
+lock is safe.
 
 ## 5. Sendaza Liability Snapshot API
 
@@ -287,6 +308,7 @@ sle.purchase.rolled_back
 sle.purchase.reconciliation_required
 sle.withdrawal.policy_approved
 sle.withdrawal.rejected
+sle.withdrawal.cancelled
 sle.withdrawal.submitted
 sle.withdrawal.broadcasted
 sle.withdrawal.confirmed
@@ -317,5 +339,7 @@ IDEMPOTENCY_KEY_REUSED
 PROVIDER_UNAVAILABLE
 SUBMISSION_OUTCOME_UNKNOWN
 WITHDRAWAL_ALREADY_SUBMITTED
+WITHDRAWAL_ALREADY_CLAIMED
+WITHDRAWAL_NOT_CANCELLABLE
 RECONCILIATION_REQUIRED
 ```

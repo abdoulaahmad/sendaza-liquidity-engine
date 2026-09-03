@@ -138,9 +138,9 @@ Returns the authoritative SLE purchase state.
 
 ```json
 {
-  "asset": "ETH",
-  "network": "ETHEREUM",
-  "amount": "0.020000000000000000",
+  "assetNetworkId": "00000000-0000-4000-8000-000000000001",
+  "transferType": "TOKEN",
+  "amount": "25.000000",
   "destinationAddress": "0x1111111111111111111111111111111111111111",
   "customerReference": "usr_123"
 }
@@ -152,21 +152,25 @@ Response:
 {
   "success": true,
   "data": {
-    "feeQuoteId": "wfq_01K4Y6",
-    "principal": "0.020000000000000000",
-    "networkFee": "0.000700000000000000",
-    "serviceFee": "0.000100000000000000",
-    "totalDebit": "0.020800000000000000",
-    "recipientAmount": "0.020000000000000000",
-    "expiresAt": "2026-08-29T15:31:00Z"
+    "feeQuoteId": "00000000-0000-4000-8000-000000000002",
+    "assetNetworkId": "00000000-0000-4000-8000-000000000001",
+    "transferType": "TOKEN",
+    "principal": "25.000000",
+    "estimatedNativeFee": "0.00100000",
+    "bufferedNativeFee": "0.00120000",
+    "networkFee": "0.300000",
+    "serviceFee": "0.260000",
+    "totalDebit": "25.560000",
+    "recipientAmount": "25.000000",
+    "expiresAt": "2026-09-03T08:00:30.000Z"
   }
 }
 ```
 
-`asset` and `network` together select one enabled `asset_network` route. An
-asset symbol alone is insufficient. For example, `USDT` on `ETHEREUM` and
-`USDT` on `TRON` use different token identifiers, treasury wallets, native fee
-assets, fee estimators, limits, custody routes, and available inventory.
+`assetNetworkId` and `transferType` select one enabled route. An asset symbol
+alone is insufficient. For example, USDT on Ethereum and USDT on Tron have
+different IDs, native fee assets, estimators, policies, snapshots, treasury
+wallets, custody routes, and inventory.
 
 Fee quotes use the latest fresh cached fee snapshot for the selected
 asset-network transfer type. SLE refuses the quote when the snapshot is stale or

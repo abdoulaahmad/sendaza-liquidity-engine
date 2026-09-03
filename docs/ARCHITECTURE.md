@@ -223,10 +223,12 @@ purchase_timeout_jobs
 
 ```text
 withdrawal_fee_quotes
-- id, asset_network_id, principal_atomic, network_fee_atomic
-- native_fee_asset_id, native_fee_atomic, conversion_rate
-- fee_buffer_atomic, service_fee_atomic, total_debit_atomic
-- fee_snapshot_id, expires_at
+- id, asset_network_id, transfer_type, fee_snapshot_id
+- customer_reference, destination_address, principal_atomic
+- estimated_native_fee_atomic, buffered_native_fee_atomic, network_fee_atomic
+- fixed_service_fee_atomic, percentage_service_fee_atomic, service_fee_atomic
+- total_debit_atomic, recipient_amount_atomic, asset_decimals
+- native_fee_asset_decimals, rounding_mode, expires_at, created_at
 
 withdrawals
 - id, asset_network_id, sendaza_customer_id, sendaza_lock_reference
@@ -268,10 +270,28 @@ treasury_funding_intents
 - treasury_wallet_id, asset_network_id, expected_atomic, status
 - transaction_hash, actor_id, reason, observed_at, confirmed_at
 
+network_fee_policy_versions
+- id, asset_network_id, transfer_type, native_fee_asset_id, charge_asset_id
+- required_observations, max_deviation_bps, percentage_buffer_bps
+- fixed_buffer_atomic, service fee policy, TTLs, status, version
+
+network_fee_observations
+- id, policy_id, source, estimated_native_fee_atomic
+- deduplication_key, safe_reference, observed_at, expires_at
+
+fee_conversion_evidence
+- id, from_asset_id, to_asset_id, numerator, denominator
+- source_reference, observed_at, expires_at
+
 network_fee_snapshots
-- id, asset_network_id, transfer_type, native_fee_asset_id
-- estimated_native_fee_atomic, fee_level, source
-- block_reference, observed_at, expires_at
+- id, policy_id, status, rejection_reason
+- estimated_native_fee_atomic, percentage_buffer_atomic, fixed_buffer_atomic
+- buffered_native_fee_atomic, charged_network_fee_atomic, deviation_bps
+- conversion numerator/denominator and evidence, calculated_at, expires_at
+
+network_fee_refresh_jobs
+- id, policy_id, status, next_refresh_at
+- lease_token, lease_expires_at, attempt_count, last_error_code
 
 inventory_reservations
 - id, asset_network_id, purchase_id, amount_atomic

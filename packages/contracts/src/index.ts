@@ -93,3 +93,44 @@ export function parseSettlePurchaseBody(value: unknown): SettlePurchaseBody {
     throw new ContractValidationError('INVALID_REQUEST_BODY');
   return value as unknown as SettlePurchaseBody;
 }
+
+export interface CreateWithdrawalFeeQuoteBody {
+  readonly assetNetworkId: string;
+  readonly transferType: 'NATIVE' | 'TOKEN';
+  readonly amount: string;
+  readonly destinationAddress: string;
+  readonly customerReference: string;
+}
+
+export function parseCreateWithdrawalFeeQuoteBody(value: unknown): CreateWithdrawalFeeQuoteBody {
+  const keys = [
+    'amount',
+    'assetNetworkId',
+    'customerReference',
+    'destinationAddress',
+    'transferType',
+  ];
+  if (
+    !isPlainObject(value) ||
+    Object.keys(value).length !== keys.length ||
+    !keys.every((key) => key in value)
+  ) {
+    throw new ContractValidationError('INVALID_REQUEST_BODY');
+  }
+  if (
+    typeof value.assetNetworkId !== 'string' ||
+    !UUID_PATTERN.test(value.assetNetworkId) ||
+    (value.transferType !== 'NATIVE' && value.transferType !== 'TOKEN') ||
+    typeof value.amount !== 'string' ||
+    !DECIMAL_PATTERN.test(value.amount) ||
+    typeof value.destinationAddress !== 'string' ||
+    value.destinationAddress.length < 1 ||
+    value.destinationAddress.length > 255 ||
+    typeof value.customerReference !== 'string' ||
+    value.customerReference.length < 1 ||
+    value.customerReference.length > 100
+  ) {
+    throw new ContractValidationError('INVALID_REQUEST_BODY');
+  }
+  return value as unknown as CreateWithdrawalFeeQuoteBody;
+}

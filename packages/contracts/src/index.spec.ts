@@ -3,6 +3,7 @@ import {
   parseCreatePurchaseBody,
   parseCreateQuoteBody,
   parseSettlePurchaseBody,
+  parseCreateWithdrawalFeeQuoteBody,
 } from './index';
 
 describe('parseCreateQuoteBody', () => {
@@ -25,6 +26,31 @@ describe('parseCreateQuoteBody', () => {
     { ...valid, debitAmount: '2e5' },
   ])('rejects malformed or client-controlled input %#', (body) => {
     expect(() => parseCreateQuoteBody(body)).toThrow(ContractValidationError);
+  });
+});
+
+describe('withdrawal fee quote contract', () => {
+  const valid = {
+    assetNetworkId: '00000000-0000-4000-8000-000000000001',
+    transferType: 'TOKEN',
+    amount: '25.000000',
+    destinationAddress: '0xabc123',
+    customerReference: 'customer-1',
+  };
+
+  it('requires an explicit asset-network and transfer type', () => {
+    expect(parseCreateWithdrawalFeeQuoteBody(valid)).toEqual(valid);
+  });
+
+  it.each([
+    { ...valid, assetNetworkId: 'USDT' },
+    { ...valid, transferType: 'FAST' },
+    { ...valid, amount: 25 },
+    { ...valid, amount: '2.5e1' },
+    { ...valid, provider: 'client-choice' },
+    { ...valid, destinationAddress: '' },
+  ])('rejects ambiguous or client-controlled input %#', (body) => {
+    expect(() => parseCreateWithdrawalFeeQuoteBody(body)).toThrow(ContractValidationError);
   });
 });
 

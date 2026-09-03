@@ -197,3 +197,27 @@ compensating records. SLE never writes Sendaza balances or claims cross-service
 ACID atomicity.
 
 Canonical details: [modules/purchase-engine/MODULE.md](./modules/purchase-engine/MODULE.md).
+
+## ADR-012: Withdrawal Fees Use Cached Network-Scoped Evidence
+
+**Decision:** Proposed on 3 September 2026
+
+Network fees are estimated and cached separately for every configured
+asset-network and transfer type. A refresh combines a fee-provider estimate with
+an independent RPC estimate where the network supports both. A snapshot is
+publishable only when the required observations are fresh and within the
+configured deviation tolerance.
+
+The snapshot stores the estimated native fee, the versioned safety buffer, the
+buffered native fee, and the evidence used. When the withdrawn asset is not the
+network's native fee asset, SLE converts the buffered native fee into the
+configured customer charge asset using a fresh immutable conversion snapshot.
+All rounding favors treasury safety and is recorded explicitly.
+
+A withdrawal fee quote consumes the latest fresh accepted snapshot and freezes
+principal, estimated fee, buffer, charged network fee, service fee, total debit,
+recipient amount, policy version, conversion evidence, and expiry. Execution may
+reject or require review when current cost exceeds tolerance, but it never
+silently increases the customer-approved debit.
+
+Canonical details: [modules/network-fees/MODULE.md](./modules/network-fees/MODULE.md).

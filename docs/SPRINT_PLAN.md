@@ -180,6 +180,9 @@ are immutable.
 
 ## Sprint 7: Cached Network Fee Engine
 
+**Status:** In progress from 3 September 2026. ADR-012 and the Network Fee module
+contract are proposed for review.
+
 **Outcome:** Sendaza receives fast fee quotes from fresh asset-network snapshots.
 
 **Work:**

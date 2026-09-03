@@ -3,6 +3,9 @@ import {
   WithdrawalFeeQuoteCalculationError,
   calculateNetworkFee,
   calculateWithdrawalFeeQuote,
+  NetworkFeeRepository,
+  StoredWithdrawalFeeQuote,
+  WithdrawalFeeQuoteService,
 } from './network-fee';
 
 describe('calculateNetworkFee', () => {
@@ -62,6 +65,89 @@ describe('calculateNetworkFee', () => {
     expect(() => calculateNetworkFee({ ...input, maxDeviationBps: 499 })).toThrow(
       new NetworkFeeCalculationError('FEE_ESTIMATE_DEVIATION_EXCEEDED'),
     );
+  });
+});
+
+describe('WithdrawalFeeQuoteService', () => {
+  const now = new Date('2026-09-03T08:00:00.000Z');
+  const stored: StoredWithdrawalFeeQuote = {
+    id: 'quote-1',
+    assetNetworkId: 'asset-network-1',
+    transferType: 'TOKEN',
+    feeSnapshotId: 'snapshot-1',
+    customerReference: 'customer-1',
+    destinationAddress: 'destination-1',
+    principalAtomic: 25_000_000n,
+    estimatedNativeFeeAtomic: 100_000n,
+    bufferedNativeFeeAtomic: 120_000n,
+    networkFeeAtomic: 300_000n,
+    fixedServiceFeeAtomic: 10_000n,
+    percentageServiceFeeAtomic: 250_000n,
+    serviceFeeAtomic: 260_000n,
+    totalDebitAtomic: 25_560_000n,
+    recipientAmountAtomic: 25_000_000n,
+    assetDecimals: 6,
+    nativeFeeAssetDecimals: 8,
+    roundingMode: 'CEILING',
+    expiresAt: new Date(now.getTime() + 30_000),
+    createdAt: now,
+  };
+  const repository: NetworkFeeRepository = {
+    loadPolicy: jest.fn(),
+    saveRefresh: jest.fn(),
+    loadQuoteContext: jest.fn().mockResolvedValue({
+      assetNetworkId: 'asset-network-1',
+      transferType: 'TOKEN',
+      assetDecimals: 6,
+      nativeFeeAssetDecimals: 8,
+      minPrincipalAtomic: 1_000_000n,
+      maxPrincipalAtomic: 100_000_000n,
+      fixedServiceFeeAtomic: 10_000n,
+      percentageServiceFeeBps: 100,
+      quoteTtlSeconds: 30,
+      snapshot: {
+        id: 'snapshot-1',
+        policyId: 'policy-1',
+        assetNetworkId: 'asset-network-1',
+        status: 'ACCEPTED',
+        calculation: {
+          estimatedNativeFeeAtomic: 100_000n,
+          percentageBufferAtomic: 20_000n,
+          fixedBufferAtomic: 0n,
+          bufferedNativeFeeAtomic: 120_000n,
+          chargedNetworkFeeAtomic: 300_000n,
+          deviationBps: 0,
+          roundingMode: 'CEILING',
+        },
+        calculatedAt: now,
+        expiresAt: new Date(now.getTime() + 30_000),
+      },
+    }),
+    insertQuote: jest.fn().mockResolvedValue(stored),
+  };
+
+  it('returns decimal strings in the correct asset precision', async () => {
+    await expect(
+      new WithdrawalFeeQuoteService(repository, () => now).create({
+        assetNetworkId: 'asset-network-1',
+        transferType: 'TOKEN',
+        amount: '25.000000',
+        destinationAddress: 'destination-1',
+        customerReference: 'customer-1',
+      }),
+    ).resolves.toEqual({
+      feeQuoteId: 'quote-1',
+      assetNetworkId: 'asset-network-1',
+      transferType: 'TOKEN',
+      principal: '25.000000',
+      estimatedNativeFee: '0.00100000',
+      bufferedNativeFee: '0.00120000',
+      networkFee: '0.300000',
+      serviceFee: '0.260000',
+      totalDebit: '25.560000',
+      recipientAmount: '25.000000',
+      expiresAt: '2026-09-03T08:00:30.000Z',
+    });
   });
 });
 

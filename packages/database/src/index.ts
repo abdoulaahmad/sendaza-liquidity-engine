@@ -10,3 +10,5 @@ export * from './prisma-pricing-refresh-job.repository';
 export * from './prisma-quote.repository';
 export * from './prisma-treasury.repository';
 export * from './prisma-purchase.repository';
+export * from './prisma-network-fee.repository';
+export * from './prisma-network-fee-refresh-job.repository';

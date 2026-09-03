@@ -413,3 +413,11 @@ or reconciliation requires:
 5. Updated tests and operational procedures
 
 Emergency fixes follow the same evidence requirements after immediate containment.
+
+A change to the verification mechanism itself (for example, CI becoming
+unavailable) does not relax any requirement in this document. It requires the
+same impact analysis and an ADR recording the accepted temporary substitute
+evidence and the condition that supersedes it. See
+[ADR-013](./DESIGN_DECISIONS.md#adr-013-temporary-local-verification-substitutes-for-blocked-github-actions-ci)
+for the current GitHub Actions billing block and its accepted local-verification
+substitute.

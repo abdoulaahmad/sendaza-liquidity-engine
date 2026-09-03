@@ -221,3 +221,46 @@ reject or require review when current cost exceeds tolerance, but it never
 silently increases the customer-approved debit.
 
 Canonical details: [modules/network-fees/MODULE.md](./modules/network-fees/MODULE.md).
+
+## ADR-013: Temporary Local Verification Substitutes for Blocked GitHub Actions CI
+
+**Decision:** Accepted on 3 September 2026
+
+GitHub Actions cannot start a runner for this repository's account. Every
+workflow run fails within a few seconds with zero recorded job steps and no
+retrievable job log, on every branch and event type, including direct pushes to
+`main`. This is an account-level GitHub Actions billing state (free-tier minutes
+exhausted with no spending limit or payment method configured), not a defect in
+`.github/workflows/ci.yml`, the test suites, or any application code. The
+workflow itself is registered and active; the block occurs before a runner is
+ever assigned, so no workflow-level retry, condition, or fix can route around
+it.
+
+Until the account's GitHub Actions billing state is resolved (a payment method
+or nonzero spending limit added, or the repository made public), pull requests
+rely on local verification as the accepted substitute evidence for the CI gate:
+
+- `pnpm typecheck`
+- `pnpm lint`
+- `pnpm format:check`
+- `pnpm test`
+- `pnpm test:integration` against a real, disposable PostgreSQL instance with
+  migrations applied
+
+Each pull request's Verification section must state that GitHub Actions is
+blocked for this reason and show the equivalent local command output. This
+exception applies only to the CI execution mechanism; it does not relax any
+financial invariant, test requirement, or release gate in
+[METHODOLOGY.md](./METHODOLOGY.md). Once GitHub Actions can run again, `main`
+and every open pull request must be re-verified against real CI before further
+release-gate progress is claimed.
+
+Consequences:
+
+- No pull request may claim a passing CI check while this ADR is in effect;
+  reviewers must instead look for the local verification evidence above.
+- The first commit or push after the billing state is resolved must trigger a
+  full CI re-run on `main`'s latest commit to establish a true baseline, since
+  no commit through Sprint 7 has had a real CI signal.
+- This ADR is superseded once a CI run on this repository completes with
+  recorded job steps.

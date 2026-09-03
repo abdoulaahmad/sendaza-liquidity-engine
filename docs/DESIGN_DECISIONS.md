@@ -200,7 +200,7 @@ Canonical details: [modules/purchase-engine/MODULE.md](./modules/purchase-engine
 
 ## ADR-012: Withdrawal Fees Use Cached Network-Scoped Evidence
 
-**Decision:** Proposed on 3 September 2026
+**Decision:** Accepted on 3 September 2026
 
 Network fees are estimated and cached separately for every configured
 asset-network and transfer type. A refresh combines a fee-provider estimate with

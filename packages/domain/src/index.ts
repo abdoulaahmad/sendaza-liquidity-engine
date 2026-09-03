@@ -11,3 +11,4 @@ export * from './quote';
 export * from './quote-service';
 export * from './treasury';
 export * from './purchase';
+export * from './network-fee';

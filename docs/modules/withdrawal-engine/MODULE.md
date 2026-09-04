@@ -205,6 +205,7 @@ Requests above the automatic threshold therefore fail before withdrawal
 creation with WITHDRAWAL_REQUIRES_MANUAL_REVIEW instead of leaving an inert
 CREATED record. The configured maximum fee-quote age is enforced during
 creation in addition to the quote expiry timestamp.
+
 ## Implemented MVP Policy Gates
 
 Before a withdrawal record is created, the repository evaluates all available
@@ -231,3 +232,196 @@ SLE-owned evidence in one database transaction:
 External denylist, sanctions, and travel-rule screening require an approved
 compliance provider and remain a production launch gate. SLE does not fabricate
 a screening result.
+---
+
+# Sprint 9 Addendum: Webhooks and Blockchain Finality
+
+## Status and Dependency
+
+This is a specification for Sprint 9, not a claim that the behavior is already
+implemented. It is based on the corrected Sprint 8 implementation in commit
+b63aa3f. Sprint 9 starts with a withdrawal in SUBMITTED and a stored Fireblocks
+transfer identifier. It must not weaken Sprint 8 wallet binding, policy gates,
+leased recovery, or uncertain-outcome rules.
+
+Sprint 9 is not ready for production until its forward migration, webhook
+receiver, reconciliation workers, provider and chain adapters, tests, and
+operational controls are implemented and verified against real PostgreSQL.
+
+## Scope
+
+Sprint 9 will:
+
+- authenticate, persist, deduplicate, and asynchronously process Fireblocks
+  Webhooks V2 events;
+- independently poll non-terminal Fireblocks transfers so webhook loss cannot
+  strand a withdrawal;
+- store every provider transaction attempt, transaction hash, replacement link,
+  and immutable confirmation observation;
+- move withdrawals through broadcast and confirmation states using forward-only
+  transitions;
+- require independent chain evidence when the withdrawal's bound treasury wallet
+  has verificationRequired enabled;
+- detect evidence disagreement, stale evidence, unsupported replacement, and
+  reorganization risk and route them to reconciliation.
+
+Sprint 9 does not change quote economics, choose another treasury wallet, write
+Sendaza balances, or automatically release a Sendaza lock after submission.
+
+## State Machine Extension
+
+Sprint 9 replaces Sprint 8's temporary post-submission terminal treatment with
+these forward transitions:
+
+~~~text
+SUBMITTED -> BROADCASTED -> CONFIRMING -> CONFIRMED
+                   |             |
+                   +-> REPLACED <-+
+                         |
+                         +-> CONFIRMING -> CONFIRMED
+
+SUBMITTED/BROADCASTED/CONFIRMING/REPLACED
+  -> FAILED_ON_CHAIN
+  -> RECONCILIATION_REQUIRED
+~~~
+
+SUBMITTED, BROADCASTED, CONFIRMING, and REPLACED are non-terminal. REPLACED
+means a newer transaction attempt is now authoritative; it may move again to
+CONFIRMING, another REPLACED, FAILED_ON_CHAIN, or RECONCILIATION_REQUIRED.
+CONFIRMED is final for normal processing.
+
+The Sprint 9 forward migration must replace the Sprint 8 database transition
+trigger, which intentionally treated SUBMITTED as terminal until finality
+tracking existed. No applied migration may be edited.
+
+## Webhook Trust Boundary
+
+The webhook endpoint accepts Fireblocks Webhooks V2 only. It verifies the
+detached JWS in the Fireblocks-Webhook-Signature header against the exact raw
+request bytes, using RS512 and the configured environment-specific Fireblocks
+JWKS URL. Key rotation is supported by selecting the JWK by key ID and refreshing
+the bounded JWKS cache. Legacy static-secret signature assumptions are not part
+of this design.
+
+Before cryptographic verification, the endpoint applies a strict body-size
+limit, content-type validation, request timeout, and rate limiting. It must not
+persist arbitrary headers or an unlimited untrusted body. Invalid requests may
+store only an allowlisted, redacted rejection record containing a body hash,
+received time, reason, and safe request metadata.
+
+For a valid signature, SLE stores the exact raw body, the provider event ID,
+event type, safe signature metadata, received time, and processing status before
+acknowledging success. The provider event ID is unique. Duplicate delivery
+returns success after confirming the existing inbox row and never reapplies the
+financial transition. Business processing runs from a leased inbox job and is
+safe after a crash or retry.
+
+## Provider Polling and Evidence
+
+A bounded worker polls every due post-submission withdrawal. It obtains the
+current Fireblocks transfer status and transaction hash without holding a
+database transaction open. The result is then committed through the same domain
+transition function used by webhook processing.
+
+Webhooks provide low-latency signals; they are not the sole authority. Polling
+recovers missing events. For a withdrawal whose immutable treasuryWalletId
+points to a wallet with verificationRequired, a provider claim alone can never
+produce CONFIRMED. A network-specific read-only chain adapter must independently
+match the transaction, asset, network, destination, amount, successful execution,
+and required confirmation count. Missing, stale, or conflicting evidence enters
+RECONCILIATION_REQUIRED.
+
+## Transaction Attempts and Replacement
+
+Every submission or replacement is a separate immutable transaction-attempt
+record linked to one withdrawal. Each attempt has its own deterministic external
+transaction ID and may have one or more observed hashes. A Fireblocks external
+transaction ID is never reused for a replacement request.
+
+Replacement is network-specific and fail-closed:
+
+- EVM replacement uses the Fireblocks transaction-replacement operation for the
+  current hash and records a new attempt linked to the replaced attempt.
+- Bitcoin acceleration, including CPFP where supported, is a separate adapter
+  capability with its own policy and evidence.
+- Networks without an implemented and tested replacement adapter cannot be
+  accelerated automatically.
+
+The original attempt and hashes are never overwritten or deleted. Exactly one
+attempt is current, enforced transactionally. Reordered events about an older
+attempt remain audit evidence but cannot displace a newer current attempt.
+
+## Finality and Reorganizations
+
+Each observation stores its source, provider status, hash, block reference,
+confirmation count, success or failure evidence, observed time, and normalized
+payload hash. Observations are append-only.
+
+Before the required confirmation threshold, a block disappearance or changed
+canonical block is treated as a reorganization observation and the withdrawal
+remains non-final while the current transaction is rechecked. If evidence
+disagrees, or a reorganization is detected after SLE recorded CONFIRMED, SLE
+does not silently reverse or rewrite completed history. It creates an incident,
+emits an auditable reconciliation event, and enters the compensating workflow
+defined by the reconciliation module.
+
+FAILED_ON_CHAIN requires positive evidence that the broadcast transaction had
+no successful asset-transfer effect. A dropped, replaced, or temporarily missing
+transaction is not enough by itself. No post-submission failure automatically
+releases the Sendaza lock in Sprint 9.
+
+## Persistence Requirements
+
+The Sprint 9 schema must add, at minimum:
+
+- an inbound webhook inbox with unique provider event ID, raw-body storage for
+  verified events, signature metadata, processing state, attempts, and lease;
+- a withdrawal transaction-attempt table with unique deterministic external ID,
+  provider transfer ID, replacement relationship, current-attempt constraint,
+  and provider request hash;
+- an append-only transaction-hash history linked to attempts;
+- append-only provider and chain confirmation observations;
+- bounded polling jobs with due time, attempts, lease owner, and lease expiry;
+- incident or reconciliation linkage for conflicting and post-finality evidence.
+
+Every accepted state transition and its outbound event commit in the same
+PostgreSQL transaction. Workers claim bounded batches using leases and
+FOR UPDATE SKIP LOCKED. Unique constraints, request hashes, and guarded state
+transitions provide idempotency across process crashes.
+
+## Events
+
+Sprint 9 adds sle.withdrawal.broadcasted, sle.withdrawal.replaced,
+sle.withdrawal.confirmed, and sle.withdrawal.failed_on_chain. Existing
+sle.withdrawal.reconciliation_required remains the escalation event. Events use
+stable IDs and the existing signed, at-least-once Sendaza outbox.
+
+## Required Tests
+
+- Valid Webhooks V2 signature, rotated JWK, invalid signature, oversized body,
+  wrong content type, duplicate event, replay, delayed event, and reordered event.
+- Crash after verified inbox persistence, crash during processing, and duplicate
+  worker claims without duplicate transitions or events.
+- Missing webhook recovered by polling; provider timeout remains uncertain.
+- Provider and independent-chain agreement, mismatch, staleness, reverted
+  execution, and wrong destination or amount.
+- Confirmation threshold boundaries and chain reorganization before and after
+  recorded finality.
+- One and multiple EVM replacements, unique external IDs, immutable attempt/hash
+  history, and stale events from replaced attempts.
+- Unsupported-network replacement fails closed.
+- Real PostgreSQL concurrency, lease-expiry, unique-constraint, migration, outbox,
+  and restart tests.
+
+## Delivery Gate and Deferred Work
+
+Implementation must update the Prisma schema through a new forward migration,
+the domain transition table, Fireblocks and chain adapter contracts, worker/API
+wiring, OpenAPI and event contracts, canonical architecture documents, and the
+Sprint 9 HTML/PDF learning report. The migration requires pre/post verification
+in the isolated test database before production approval.
+
+Automatic customer lock release or ledger correction after FAILED_ON_CHAIN, and
+compensating action after a post-finality reorganization, remain owned by the
+later reconciliation gate. Sprint 9 records trustworthy evidence and escalates;
+it does not invent settlement authority.

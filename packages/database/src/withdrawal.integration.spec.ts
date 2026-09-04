@@ -17,9 +17,13 @@ describe('withdrawal PostgreSQL integration', () => {
     tokenAsset: randomUUID(),
     network: randomUUID(),
     assetNetwork: randomUUID(),
+    nativeAssetNetwork: randomUUID(),
     feePolicy: randomUUID(),
     withdrawalPolicy: randomUUID(),
     feeSnapshot: randomUUID(),
+    custodyProvider: randomUUID(),
+    treasuryWallet: randomUUID(),
+    gasWallet: randomUUID(),
   };
   let configurationVersionId: number;
 
@@ -99,6 +103,90 @@ describe('withdrawal PostgreSQL integration', () => {
         minWithdrawalAtomic: 1_000_000n,
         maxWithdrawalAtomic: 100_000_000n,
       },
+    });
+    await prisma.assetNetwork.create({
+      data: {
+        id: ids.nativeAssetNetwork,
+        assetId: ids.nativeAsset,
+        networkId: ids.network,
+        tokenStandard: 'NATIVE',
+        networkDecimals: 8,
+        withdrawalsEnabled: true,
+      },
+    });
+    await prisma.custodyProviderConfiguration.create({
+      data: {
+        id: ids.custodyProvider,
+        code: 'FIREBLOCKS-' + suffix,
+        type: 'FIREBLOCKS',
+      },
+    });
+    await prisma.treasuryWallet.create({
+      data: {
+        id: ids.treasuryWallet,
+        assetNetworkId: ids.assetNetwork,
+        custodyProviderId: ids.custodyProvider,
+        providerVaultId: 'vault-' + suffix,
+        providerAssetId: 'TOKEN_TEST_' + suffix,
+        publicAddress: '0x' + suffix,
+        role: 'PRIMARY',
+        status: 'ENABLED',
+      },
+    });
+    await prisma.treasuryWallet.create({
+      data: {
+        id: ids.gasWallet,
+        assetNetworkId: ids.nativeAssetNetwork,
+        custodyProviderId: ids.custodyProvider,
+        providerVaultId: 'gas-vault-' + suffix,
+        providerAssetId: 'NATIVE_TEST_' + suffix,
+        publicAddress: '0xGAS' + suffix,
+        role: 'GAS',
+        status: 'ENABLED',
+        gasReserveAtomic: 1_000n,
+      },
+    });
+    await prisma.treasurySnapshot.createMany({
+      data: [
+        {
+          treasuryWalletId: ids.treasuryWallet,
+          assetNetworkId: ids.assetNetwork,
+          controlledAtomic: 1_000_000_000n,
+          providerAvailableAtomic: 1_000_000_000n,
+          pendingAtomic: 0n,
+          frozenAtomic: 0n,
+          lockedAtomic: 0n,
+          chainConfirmedAtomic: 1_000_000_000n,
+          reservedAtomic: 0n,
+          allocatedAtomic: 0n,
+          safetyBufferAtomic: 0n,
+          gasReserveAtomic: 0n,
+          unavailableAtomic: 0n,
+          sellableAtomic: 1_000_000_000n,
+          verificationStatus: 'MATCHED',
+          observedAt: new Date('2026-09-03T07:30:00.000Z'),
+          expiresAt: new Date('2026-09-04T07:30:00.000Z'),
+        },
+        {
+          treasuryWalletId: ids.gasWallet,
+          assetNetworkId: ids.nativeAssetNetwork,
+          controlledAtomic: 1_000_000n,
+          providerAvailableAtomic: 1_000_000n,
+          pendingAtomic: 0n,
+          frozenAtomic: 0n,
+          lockedAtomic: 0n,
+          chainConfirmedAtomic: 1_000_000n,
+          reservedAtomic: 0n,
+          allocatedAtomic: 0n,
+          safetyBufferAtomic: 0n,
+          gasReserveAtomic: 1_000n,
+          unavailableAtomic: 1_000n,
+          sellableAtomic: 999_000n,
+          verificationStatus: 'MATCHED',
+          observedAt: new Date('2026-09-03T07:30:00.000Z'),
+          expiresAt: new Date('2026-09-04T07:30:00.000Z'),
+        },
+      ],
     });
     await prisma.networkFeePolicyVersion.create({
       data: {
@@ -261,9 +349,11 @@ describe('withdrawal PostgreSQL integration', () => {
 
     const context = await jobs.beginSubmitting(claim, randomUUID(), now);
     expect(context).toMatchObject({
+      operation: 'CREATE',
       withdrawalId: created.value.id,
       externalTxId: created.value.id,
-      assetNetworkId: ids.assetNetwork,
+      providerVaultId: 'vault-' + suffix,
+      providerAssetId: 'TOKEN_TEST_' + suffix,
     });
     await expect(
       prisma.withdrawal.findUniqueOrThrow({ where: { id: created.value.id } }),
@@ -337,5 +427,65 @@ describe('withdrawal PostgreSQL integration', () => {
     await expect(
       prisma.withdrawalSubmissionJob.findUnique({ where: { withdrawalId: created.value.id } }),
     ).resolves.toBeNull();
+  });
+
+  it('rejects a destination that does not match the configured address family', async () => {
+    const now = new Date('2026-09-03T08:00:00.000Z');
+    const quote = await createFeeQuote({ destinationAddress: 'not-a-test-address' });
+    const result = await withdrawals.create({
+      feeQuoteId: quote.id,
+      customerReference: 'customer-' + suffix,
+      clientLockReference: 'lock-address-' + suffix,
+      clientReference: 'withdrawal-address-' + suffix,
+      destinationAddress: quote.destinationAddress,
+      correlationId: randomUUID(),
+      createdAt: now,
+    });
+    expect(result).toEqual({ kind: 'FAILURE', code: 'DESTINATION_ADDRESS_INVALID' });
+  });
+
+  it('reclaims a crashed SUBMITTING job as lookup-only recovery work', async () => {
+    const now = new Date('2026-09-03T08:00:00.000Z');
+    const quote = await createFeeQuote();
+    const created = await withdrawals.create({
+      feeQuoteId: quote.id,
+      customerReference: 'customer-' + suffix,
+      clientLockReference: 'lock-recovery-' + suffix,
+      clientReference: 'withdrawal-recovery-' + suffix,
+      destinationAddress: quote.destinationAddress,
+      correlationId: randomUUID(),
+      createdAt: now,
+    });
+    if (created.kind !== 'SUCCESS') throw new Error('expected success');
+
+    const firstClaims = await jobs.claimBatch({
+      limit: 100,
+      leaseSeconds: 30,
+      leaseToken: randomUUID(),
+      now,
+    });
+    const firstClaim = firstClaims.find((claim) => claim.withdrawalId === created.value.id);
+    if (!firstClaim) throw new Error('expected first claim');
+    await jobs.beginSubmitting(firstClaim, randomUUID(), now);
+
+    const recoveredAt = new Date(now.getTime() + 31_000);
+    const recoveryClaims = await secondJobs.claimBatch({
+      limit: 100,
+      leaseSeconds: 30,
+      leaseToken: randomUUID(),
+      now: recoveredAt,
+    });
+    const recoveryClaim = recoveryClaims.find((claim) => claim.withdrawalId === created.value.id);
+    if (!recoveryClaim) throw new Error('expected recovery claim');
+
+    await expect(
+      secondJobs.beginSubmitting(recoveryClaim, randomUUID(), recoveredAt),
+    ).resolves.toMatchObject({
+      operation: 'LOOKUP',
+      withdrawalId: created.value.id,
+      externalTxId: created.value.id,
+      providerVaultId: 'vault-' + suffix,
+      providerAssetId: 'TOKEN_TEST_' + suffix,
+    });
   });
 });

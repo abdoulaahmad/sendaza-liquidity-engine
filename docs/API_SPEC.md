@@ -213,11 +213,15 @@ Response:
 }
 ```
 
-`status` starts at `CREATED` and moves to `POLICY_APPROVED` immediately when the
-total debit is within the policy auto-approval threshold; otherwise it remains
-`CREATED` pending manual review. Sprint 8 then advances the withdrawal through
-`SUBMITTING` to `SUBMITTED`, `CANCELLED`, `REJECTED`, or `SUBMISSION_UNKNOWN`.
-`BROADCASTED` onward is Sprint 9 scope.
+For the Sprint 8 MVP, a request within the automatic-approval threshold is
+created and atomically advanced through CREATED to POLICY_APPROVED. Because the
+authenticated manual-review command is not implemented yet, a request above the
+threshold fails before record creation with WITHDRAWAL_REQUIRES_MANUAL_REVIEW;
+it is never left as an inert CREATED withdrawal. The worker advances approved
+withdrawals through SUBMITTING to SUBMITTED or SUBMISSION_UNKNOWN. A provider
+terminal status without independent pre-broadcast proof produces
+RECONCILIATION_REQUIRED and keeps the Sendaza lock. BROADCASTED onward is Sprint
+9 scope.
 
 ### `GET /withdrawals/:id`
 

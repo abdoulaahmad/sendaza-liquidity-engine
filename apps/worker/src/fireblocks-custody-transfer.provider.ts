@@ -16,7 +16,7 @@ export class FireblocksTransferProviderError extends Error {
   }
 }
 
-const REJECTED_STATUSES = new Set(['FAILED', 'REJECTED', 'CANCELLED', 'BLOCKED']);
+const TERMINAL_FAILURE_STATUSES = new Set(['FAILED', 'REJECTED', 'CANCELLED', 'BLOCKED']);
 const ACCEPTED_STATUSES = new Set([
   'SUBMITTED',
   'PENDING_SIGNATURE',
@@ -32,7 +32,6 @@ export class FireblocksCustodyTransferProvider implements CustodyTransferProvide
     private readonly apiKey: string,
     private readonly apiPrivateKey: string,
     private readonly baseUrl: string,
-    private readonly vaultAccountId: string,
     private readonly fetcher: FetchLike = fetch,
     private readonly timeoutMs = 5_000,
     private readonly clock: () => Date = () => new Date(),
@@ -47,8 +46,8 @@ export class FireblocksCustodyTransferProvider implements CustodyTransferProvide
       // externalTxId is Fireblocks' own idempotency key: resubmitting the same
       // withdrawal ID never creates a second on-chain transfer.
       externalTxId: request.externalTxId,
-      assetId: request.assetNetworkId,
-      source: { type: 'VAULT_ACCOUNT', id: this.vaultAccountId },
+      assetId: request.providerAssetId,
+      source: { type: 'VAULT_ACCOUNT', id: request.providerVaultId },
       destination: {
         type: 'ONE_TIME_ADDRESS',
         oneTimeAddress: { address: request.destinationAddress },
@@ -59,7 +58,7 @@ export class FireblocksCustodyTransferProvider implements CustodyTransferProvide
   }
 
   async findTransferByExternalTxId(externalTxId: string): Promise<CustodyTransferOutcome> {
-    return this.get(`/v1/transactions/external-tx-id/${encodeURIComponent(externalTxId)}`);
+    return this.get(`/v1/transactions/external_tx_id/${encodeURIComponent(externalTxId)}`);
   }
 
   private async post(uri: string, body: string): Promise<CustodyTransferOutcome> {
@@ -125,8 +124,8 @@ export class FireblocksCustodyTransferProvider implements CustodyTransferProvide
 function classify(response: TransactionResponse): CustodyTransferOutcome {
   const id = typeof response.id === 'string' ? response.id : undefined;
   const status = typeof response.status === 'string' ? response.status : undefined;
-  if (status && REJECTED_STATUSES.has(status)) {
-    return { kind: 'REJECTED', reasonCode: status };
+  if (status && TERMINAL_FAILURE_STATUSES.has(status)) {
+    return { kind: 'TERMINAL_FAILURE', reasonCode: status };
   }
   if (id && status && ACCEPTED_STATUSES.has(status)) {
     return { kind: 'ACCEPTED', providerTransferId: id };

@@ -20,6 +20,8 @@ import {
   PurchaseTimeoutRepository,
   NetworkFeeRepository,
   NetworkFeeRefreshJobRepository,
+  WithdrawalRepository,
+  WithdrawalSubmissionJobRepository,
 } from '../../domain/src';
 import { PrismaIdempotencyRepository } from './prisma-idempotency.repository';
 import { PrismaAuditRepository } from './prisma-audit.repository';
@@ -37,6 +39,10 @@ import {
 } from './prisma-purchase.repository';
 import { PrismaNetworkFeeRepository } from './prisma-network-fee.repository';
 import { PrismaNetworkFeeRefreshJobRepository } from './prisma-network-fee-refresh-job.repository';
+import {
+  PrismaWithdrawalRepository,
+  PrismaWithdrawalSubmissionJobRepository,
+} from './prisma-withdrawal.repository';
 
 @Module({
   providers: [
@@ -56,6 +62,8 @@ import { PrismaNetworkFeeRefreshJobRepository } from './prisma-network-fee-refre
     PrismaPurchaseTimeoutRepository,
     PrismaNetworkFeeRepository,
     PrismaNetworkFeeRefreshJobRepository,
+    PrismaWithdrawalRepository,
+    PrismaWithdrawalSubmissionJobRepository,
     { provide: AuthenticationNonceRepository, useExisting: PrismaAuthenticationNonceRepository },
     { provide: CredentialMetadataRepository, useExisting: PrismaCredentialMetadataRepository },
     { provide: IdempotencyRepository, useExisting: PrismaIdempotencyRepository },
@@ -71,6 +79,11 @@ import { PrismaNetworkFeeRefreshJobRepository } from './prisma-network-fee-refre
     {
       provide: NetworkFeeRefreshJobRepository,
       useExisting: PrismaNetworkFeeRefreshJobRepository,
+    },
+    { provide: WithdrawalRepository, useExisting: PrismaWithdrawalRepository },
+    {
+      provide: WithdrawalSubmissionJobRepository,
+      useExisting: PrismaWithdrawalSubmissionJobRepository,
     },
     {
       provide: PricingRefreshJobRepository,
@@ -93,6 +106,8 @@ import { PrismaNetworkFeeRefreshJobRepository } from './prisma-network-fee-refre
     PurchaseTimeoutRepository,
     NetworkFeeRepository,
     NetworkFeeRefreshJobRepository,
+    WithdrawalRepository,
+    WithdrawalSubmissionJobRepository,
   ],
 })
 export class DatabaseModule {}

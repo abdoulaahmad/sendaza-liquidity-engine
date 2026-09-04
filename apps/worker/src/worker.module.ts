@@ -49,6 +49,16 @@ import {
   WorkerNetworkFeeEstimatorResolver,
 } from './network-fee-estimator';
 import { NetworkFeeRefreshWorker } from './network-fee-refresh.worker';
+import { WithdrawalConfiguration } from '../../../packages/configuration/src';
+import {
+  CustodyTransferProvider,
+  WithdrawalRecoveryBatchService,
+  WithdrawalSubmissionBatchService,
+  WithdrawalSubmissionJobRepository,
+} from '../../../packages/domain/src';
+import { DeterministicFakeCustodyTransferProvider } from './fake-custody-transfer.provider';
+import { WithdrawalSubmissionWorker } from './withdrawal-submission.worker';
+import { WithdrawalRecoveryWorker } from './withdrawal-recovery.worker';
 
 @Module({
   imports: [DatabaseModule],
@@ -214,6 +224,37 @@ import { NetworkFeeRefreshWorker } from './network-fee-refresh.worker';
       inject: [NetworkFeeRefreshJobRepository, NetworkFeeRefreshService, NetworkFeeConfiguration],
     },
     NetworkFeeRefreshWorker,
+    WithdrawalConfiguration,
+    {
+      provide: CustodyTransferProvider,
+      useValue: new DeterministicFakeCustodyTransferProvider(),
+    },
+    {
+      provide: WithdrawalSubmissionBatchService,
+      useFactory: (
+        jobs: WithdrawalSubmissionJobRepository,
+        custody: CustodyTransferProvider,
+        configuration: WithdrawalConfiguration,
+      ) =>
+        new WithdrawalSubmissionBatchService(
+          jobs,
+          custody,
+          configuration.submissionBatchSize,
+          configuration.submissionLeaseSeconds,
+        ),
+      inject: [WithdrawalSubmissionJobRepository, CustodyTransferProvider, WithdrawalConfiguration],
+    },
+    WithdrawalSubmissionWorker,
+    {
+      provide: WithdrawalRecoveryBatchService,
+      useFactory: (
+        jobs: WithdrawalSubmissionJobRepository,
+        custody: CustodyTransferProvider,
+        configuration: WithdrawalConfiguration,
+      ) => new WithdrawalRecoveryBatchService(jobs, custody, configuration.recoveryBatchSize),
+      inject: [WithdrawalSubmissionJobRepository, CustodyTransferProvider, WithdrawalConfiguration],
+    },
+    WithdrawalRecoveryWorker,
   ],
 })
 export class WorkerModule {}

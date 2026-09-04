@@ -134,3 +134,45 @@ export function parseCreateWithdrawalFeeQuoteBody(value: unknown): CreateWithdra
   }
   return value as unknown as CreateWithdrawalFeeQuoteBody;
 }
+
+export interface CreateWithdrawalBody {
+  readonly feeQuoteId: string;
+  readonly customerReference: string;
+  readonly clientLockReference: string;
+  readonly clientReference: string;
+  readonly destinationAddress: string;
+}
+
+export function parseCreateWithdrawalBody(value: unknown): CreateWithdrawalBody {
+  const keys = [
+    'clientLockReference',
+    'clientReference',
+    'customerReference',
+    'destinationAddress',
+    'feeQuoteId',
+  ];
+  if (
+    !isPlainObject(value) ||
+    Object.keys(value).length !== keys.length ||
+    !keys.every((key) => key in value)
+  ) {
+    throw new ContractValidationError('INVALID_REQUEST_BODY');
+  }
+  if (typeof value.feeQuoteId !== 'string' || !UUID_PATTERN.test(value.feeQuoteId)) {
+    throw new ContractValidationError('INVALID_REQUEST_BODY');
+  }
+  for (const key of ['clientLockReference', 'clientReference', 'customerReference']) {
+    const item = (value as Record<string, unknown>)[key];
+    if (typeof item !== 'string' || item.length < 1 || item.length > 100) {
+      throw new ContractValidationError('INVALID_REQUEST_BODY');
+    }
+  }
+  if (
+    typeof value.destinationAddress !== 'string' ||
+    value.destinationAddress.length < 1 ||
+    value.destinationAddress.length > 255
+  ) {
+    throw new ContractValidationError('INVALID_REQUEST_BODY');
+  }
+  return value as unknown as CreateWithdrawalBody;
+}

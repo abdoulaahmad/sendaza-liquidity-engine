@@ -160,6 +160,29 @@ enum NetworkFeeRefreshJobStatus {
   LEASED
 }
 
+enum WithdrawalStatus {
+  CREATED
+  POLICY_APPROVED
+  SUBMITTING
+  SUBMITTED
+  CANCELLED
+  REJECTED
+  SUBMISSION_UNKNOWN
+  FAILED_BEFORE_BROADCAST
+  RECONCILIATION_REQUIRED
+}
+
+enum WithdrawalSubmissionJobStatus {
+  PENDING
+  LEASED
+  COMPLETED
+}
+
+enum WithdrawalPolicyStatus {
+  ACTIVE
+  RETIRED
+}
+
 model Asset {
   id                     String                    @id @default(uuid()) @db.Uuid
   symbol                 String                    @unique @db.VarChar(20)
@@ -236,6 +259,8 @@ model AssetNetwork {
   inventoryReservations InventoryReservation[]
   networkFeePolicies    NetworkFeePolicyVersion[]
   withdrawalFeeQuotes   WithdrawalFeeQuote[]
+  withdrawalPolicies    WithdrawalPolicyVersion[]
+  withdrawals           Withdrawal[]
   createdAt             DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt             DateTime                  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -373,6 +398,7 @@ model ConfigurationVersion {
   quotePolicyVersions QuotePolicyVersion[]
   quotes              Quote[]
   networkFeePolicies  NetworkFeePolicyVersion[]
+  withdrawalPolicies  WithdrawalPolicyVersion[]
 
   @@map("configuration_versions")
 }
@@ -527,10 +553,97 @@ model WithdrawalFeeQuote {
   roundingMode               FeeRoundingMode     @default(CEILING) @map("rounding_mode")
   expiresAt                  DateTime            @map("expires_at") @db.Timestamptz(6)
   createdAt                  DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  withdrawal                 Withdrawal?
 
   @@index([assetNetworkId, createdAt])
   @@index([expiresAt])
   @@map("withdrawal_fee_quotes")
+}
+
+model WithdrawalPolicyVersion {
+  id                       String                  @id @default(uuid()) @db.Uuid
+  assetNetworkId           String                  @map("asset_network_id") @db.Uuid
+  assetNetwork             AssetNetwork            @relation(fields: [assetNetworkId], references: [id], onDelete: Restrict)
+  version                  Int
+  transferType             NetworkTransferType     @map("transfer_type")
+  autoApproveMaxAtomic     BigInt                  @map("auto_approve_max_atomic")
+  maxFeeQuoteAgeSeconds    Int                     @map("max_fee_quote_age_seconds")
+  status                   WithdrawalPolicyStatus  @default(ACTIVE)
+  configurationVersionId   Int                     @map("configuration_version_id")
+  configurationVersion     ConfigurationVersion    @relation(fields: [configurationVersionId], references: [id], onDelete: Restrict)
+  actorId                  String                  @map("actor_id") @db.VarChar(100)
+  reason                   String                  @db.VarChar(255)
+  effectiveFrom            DateTime                @map("effective_from") @db.Timestamptz(6)
+  createdAt                DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  withdrawals              Withdrawal[]
+
+  @@unique([assetNetworkId, transferType, version])
+  @@index([assetNetworkId, transferType, status, effectiveFrom])
+  @@map("withdrawal_policy_versions")
+}
+
+model Withdrawal {
+  id                       String                   @id @default(uuid()) @db.Uuid
+  feeQuoteId               String                   @unique @map("fee_quote_id") @db.Uuid
+  feeQuote                 WithdrawalFeeQuote       @relation(fields: [feeQuoteId], references: [id], onDelete: Restrict)
+  assetNetworkId           String                   @map("asset_network_id") @db.Uuid
+  assetNetwork             AssetNetwork             @relation(fields: [assetNetworkId], references: [id], onDelete: Restrict)
+  policyId                 String                   @map("policy_id") @db.Uuid
+  policy                   WithdrawalPolicyVersion  @relation(fields: [policyId], references: [id], onDelete: Restrict)
+  customerReference        String                   @map("customer_reference") @db.VarChar(100)
+  clientLockReference      String                   @unique @map("client_lock_reference") @db.VarChar(100)
+  clientReference          String                   @unique @map("client_reference") @db.VarChar(100)
+  destinationAddress       String                   @map("destination_address") @db.VarChar(255)
+  correlationId            String                   @map("correlation_id") @db.Uuid
+  principalAtomic          BigInt                   @map("principal_atomic")
+  totalDebitAtomic         BigInt                   @map("total_debit_atomic")
+  externalTxId             String                   @unique @map("external_tx_id") @db.Uuid
+  providerTransferId       String?                  @map("provider_transfer_id") @db.VarChar(100)
+  status                   WithdrawalStatus         @default(CREATED)
+  policyApprovedAt         DateTime?                @map("policy_approved_at") @db.Timestamptz(6)
+  cancelledAt              DateTime?                @map("cancelled_at") @db.Timestamptz(6)
+  rejectedAt               DateTime?                @map("rejected_at") @db.Timestamptz(6)
+  submittedAt              DateTime?                @map("submitted_at") @db.Timestamptz(6)
+  failedBeforeBroadcastAt  DateTime?                @map("failed_before_broadcast_at") @db.Timestamptz(6)
+  reconciliationRequiredAt DateTime?                @map("reconciliation_required_at") @db.Timestamptz(6)
+  createdAt                DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+  transitions              WithdrawalTransition[]
+  submissionJob            WithdrawalSubmissionJob?
+
+  @@index([assetNetworkId, status])
+  @@map("withdrawals")
+}
+
+model WithdrawalTransition {
+  id            String           @id @default(uuid()) @db.Uuid
+  withdrawalId  String           @map("withdrawal_id") @db.Uuid
+  withdrawal    Withdrawal       @relation(fields: [withdrawalId], references: [id], onDelete: Restrict)
+  fromStatus    WithdrawalStatus? @map("from_status")
+  toStatus      WithdrawalStatus @map("to_status")
+  reasonCode    String           @map("reason_code") @db.VarChar(100)
+  correlationId String           @map("correlation_id") @db.Uuid
+  occurredAt    DateTime         @default(now()) @map("occurred_at") @db.Timestamptz(6)
+
+  @@index([withdrawalId, occurredAt])
+  @@map("withdrawal_transitions")
+}
+
+model WithdrawalSubmissionJob {
+  id             String                        @id @default(uuid()) @db.Uuid
+  withdrawalId   String                        @unique @map("withdrawal_id") @db.Uuid
+  withdrawal     Withdrawal                    @relation(fields: [withdrawalId], references: [id], onDelete: Restrict)
+  status         WithdrawalSubmissionJobStatus @default(PENDING)
+  dueAt          DateTime                      @map("due_at") @db.Timestamptz(6)
+  leaseToken     String?                       @map("lease_token") @db.Uuid
+  leaseExpiresAt DateTime?                     @map("lease_expires_at") @db.Timestamptz(6)
+  attemptCount   Int                           @default(0) @map("attempt_count")
+  lastErrorCode  String?                       @map("last_error_code") @db.VarChar(100)
+  createdAt      DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime                      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([status, dueAt])
+  @@map("withdrawal_submission_jobs")
 }
 
 model Market {

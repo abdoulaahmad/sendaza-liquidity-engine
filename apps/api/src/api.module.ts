@@ -18,6 +18,9 @@ import { PurchaseController } from './purchase.controller';
 import { NetworkFeeRepository, WithdrawalFeeQuoteService } from '../../../packages/domain/src';
 import { PrismaNetworkFeeRepository } from '../../../packages/database/src';
 import { WithdrawalFeeQuoteController } from './withdrawal-fee-quote.controller';
+import { WithdrawalRepository, WithdrawalService } from '../../../packages/domain/src';
+import { PrismaWithdrawalRepository } from '../../../packages/database/src';
+import { WithdrawalController } from './withdrawal.controller';
 
 @Module({
   imports: [DatabaseModule],
@@ -27,12 +30,14 @@ import { WithdrawalFeeQuoteController } from './withdrawal-fee-quote.controller'
     QuoteController,
     PurchaseController,
     WithdrawalFeeQuoteController,
+    WithdrawalController,
   ],
   providers: [
     RegistryService,
     QuoteService,
     PurchaseConfiguration,
     WithdrawalFeeQuoteService,
+    WithdrawalService,
     {
       provide: PurchaseService,
       useFactory: (repository: PurchaseRepository, configuration: PurchaseConfiguration) =>
@@ -47,6 +52,7 @@ import { WithdrawalFeeQuoteController } from './withdrawal-fee-quote.controller'
     { provide: QuoteRepository, useExisting: PrismaQuoteRepository },
     { provide: PurchaseRepository, useExisting: PrismaPurchaseRepository },
     { provide: NetworkFeeRepository, useExisting: PrismaNetworkFeeRepository },
+    { provide: WithdrawalRepository, useExisting: PrismaWithdrawalRepository },
   ],
 })
 export class ApiModule {}

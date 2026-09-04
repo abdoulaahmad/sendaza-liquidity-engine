@@ -42,6 +42,14 @@ export type WithdrawalCreateFailure =
   | 'FEE_QUOTE_ALREADY_USED'
   | 'DESTINATION_ADDRESS_MISMATCH'
   | 'WITHDRAWAL_POLICY_UNAVAILABLE'
+  | 'CUSTODY_ROUTE_UNAVAILABLE'
+  | 'WITHDRAWAL_REQUIRES_MANUAL_REVIEW'
+  | 'DESTINATION_ADDRESS_INVALID'
+  | 'NETWORK_FEE_EVIDENCE_UNAVAILABLE'
+  | 'NETWORK_FEE_TOLERANCE_EXCEEDED'
+  | 'TREASURY_EVIDENCE_UNAVAILABLE'
+  | 'TREASURY_INSUFFICIENT'
+  | 'GAS_RESERVE_INSUFFICIENT'
   | 'WITHDRAWAL_REFERENCE_CONFLICT';
 
 export type WithdrawalCancelFailure =
@@ -75,9 +83,11 @@ export interface WithdrawalSubmissionClaim {
 }
 
 export interface WithdrawalSubmissionContext {
+  readonly operation: 'CREATE' | 'LOOKUP';
   readonly withdrawalId: string;
   readonly externalTxId: string;
-  readonly assetNetworkId: string;
+  readonly providerVaultId: string;
+  readonly providerAssetId: string;
   readonly destinationAddress: string;
   readonly principalAtomic: bigint;
   readonly assetDecimals: number;
@@ -90,7 +100,7 @@ export abstract class WithdrawalSubmissionJobRepository {
     readonly leaseToken: string;
     readonly now: Date;
   }): Promise<readonly WithdrawalSubmissionClaim[]>;
-  /** Transitions the withdrawal CREATED/POLICY_APPROVED -> SUBMITTING inside the job's lease. */
+  /** Starts or resumes submission while holding the job lease. */
   abstract beginSubmitting(
     claim: WithdrawalSubmissionClaim,
     correlationId: string,
@@ -102,21 +112,8 @@ export abstract class WithdrawalSubmissionJobRepository {
     outcome:
       | { readonly kind: 'SUBMITTED'; readonly providerTransferId: string }
       | { readonly kind: 'FAILED_BEFORE_BROADCAST' }
-      | { readonly kind: 'SUBMISSION_UNKNOWN' },
-    correlationId: string,
-    now: Date,
-  ): Promise<void>;
-  /** Lists SUBMISSION_UNKNOWN withdrawals due for recovery polling, keyed by their externalTxId. */
-  abstract listDueRecovery(
-    now: Date,
-    limit: number,
-  ): Promise<readonly { readonly withdrawalId: string; readonly externalTxId: string }[]>;
-  /** Resolves a SUBMISSION_UNKNOWN withdrawal after a recovery lookup, without an active job claim. */
-  abstract resolveUnknown(
-    withdrawalId: string,
-    outcome:
-      | { readonly kind: 'SUBMITTED'; readonly providerTransferId: string }
-      | { readonly kind: 'FAILED_BEFORE_BROADCAST' },
+      | { readonly kind: 'SUBMISSION_UNKNOWN' }
+      | { readonly kind: 'RECONCILIATION_REQUIRED' },
     correlationId: string,
     now: Date,
   ): Promise<void>;
@@ -124,7 +121,8 @@ export abstract class WithdrawalSubmissionJobRepository {
 
 export interface CustodyTransferRequest {
   readonly externalTxId: string;
-  readonly assetNetworkId: string;
+  readonly providerVaultId: string;
+  readonly providerAssetId: string;
   readonly destinationAddress: string;
   readonly amountAtomic: bigint;
   readonly assetDecimals: number;
@@ -132,7 +130,7 @@ export interface CustodyTransferRequest {
 
 export type CustodyTransferOutcome =
   | { readonly kind: 'ACCEPTED'; readonly providerTransferId: string }
-  | { readonly kind: 'REJECTED'; readonly reasonCode: string }
+  | { readonly kind: 'TERMINAL_FAILURE'; readonly reasonCode: string }
   | { readonly kind: 'UNKNOWN' };
 
 export abstract class CustodyTransferProvider {
@@ -230,15 +228,19 @@ export class WithdrawalSubmissionBatchService {
     for (const claim of claims) {
       const correlationId = randomUUID();
       const begun = await this.jobs.beginSubmitting(claim, correlationId, now);
-      if (!begun) continue; // already claimed, cancelled, or in a non-submittable state
+      if (!begun) continue;
 
-      const outcome = await this.custody.createTransfer({
-        externalTxId: begun.externalTxId,
-        assetNetworkId: begun.assetNetworkId,
-        destinationAddress: begun.destinationAddress,
-        amountAtomic: begun.principalAtomic,
-        assetDecimals: begun.assetDecimals,
-      });
+      const outcome =
+        begun.operation === 'CREATE'
+          ? await this.custody.createTransfer({
+              externalTxId: begun.externalTxId,
+              providerVaultId: begun.providerVaultId,
+              providerAssetId: begun.providerAssetId,
+              destinationAddress: begun.destinationAddress,
+              amountAtomic: begun.principalAtomic,
+              assetDecimals: begun.assetDecimals,
+            })
+          : await this.custody.findTransferByExternalTxId(begun.externalTxId);
 
       if (outcome.kind === 'ACCEPTED') {
         await this.jobs.recordOutcome(
@@ -248,10 +250,10 @@ export class WithdrawalSubmissionBatchService {
           now,
         );
         submitted += 1;
-      } else if (outcome.kind === 'REJECTED') {
+      } else if (outcome.kind === 'TERMINAL_FAILURE') {
         await this.jobs.recordOutcome(
           claim,
-          { kind: 'FAILED_BEFORE_BROADCAST' },
+          { kind: 'RECONCILIATION_REQUIRED' },
           correlationId,
           now,
         );
@@ -265,14 +267,22 @@ export class WithdrawalSubmissionBatchService {
   }
 }
 
-/** Recovery worker for SUBMISSION_UNKNOWN withdrawals; looks up by externalTxId, never providerTransferId. */
+/**
+ * A second consumer for faster recovery. It uses the same leased jobs as the
+ * submission worker, so multiple processes cannot reconcile the same row.
+ */
 @Injectable()
 export class WithdrawalRecoveryBatchService {
+  private readonly batches: WithdrawalSubmissionBatchService;
+
   constructor(
-    private readonly jobs: WithdrawalSubmissionJobRepository,
-    private readonly custody: CustodyTransferProvider,
-    private readonly batchSize: number,
-  ) {}
+    jobs: WithdrawalSubmissionJobRepository,
+    custody: CustodyTransferProvider,
+    batchSize: number,
+    leaseSeconds: number,
+  ) {
+    this.batches = new WithdrawalSubmissionBatchService(jobs, custody, batchSize, leaseSeconds);
+  }
 
   async processBatch(now: Date): Promise<{
     checked: number;
@@ -280,34 +290,13 @@ export class WithdrawalRecoveryBatchService {
     resolvedFailed: number;
     stillUnknown: number;
   }> {
-    const due = await this.jobs.listDueRecovery(now, this.batchSize);
-    let resolvedSubmitted = 0;
-    let resolvedFailed = 0;
-    let stillUnknown = 0;
-    for (const item of due) {
-      const correlationId = randomUUID();
-      const outcome = await this.custody.findTransferByExternalTxId(item.externalTxId);
-      if (outcome.kind === 'ACCEPTED') {
-        await this.jobs.resolveUnknown(
-          item.withdrawalId,
-          { kind: 'SUBMITTED', providerTransferId: outcome.providerTransferId },
-          correlationId,
-          now,
-        );
-        resolvedSubmitted += 1;
-      } else if (outcome.kind === 'REJECTED') {
-        await this.jobs.resolveUnknown(
-          item.withdrawalId,
-          { kind: 'FAILED_BEFORE_BROADCAST' },
-          correlationId,
-          now,
-        );
-        resolvedFailed += 1;
-      } else {
-        stillUnknown += 1;
-      }
-    }
-    return { checked: due.length, resolvedSubmitted, resolvedFailed, stillUnknown };
+    const result = await this.batches.processBatch(now, randomUUID());
+    return {
+      checked: result.claimed,
+      resolvedSubmitted: result.submitted,
+      resolvedFailed: result.failed,
+      stillUnknown: result.unknown,
+    };
   }
 }
 

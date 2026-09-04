@@ -264,3 +264,33 @@ Consequences:
   no commit through Sprint 7 has had a real CI signal.
 - This ADR is superseded once a CI run on this repository completes with
   recorded job steps.
+
+## ADR-014: Withdrawal Submission Uses Immutable Custody Routes and Lease-Controlled Recovery
+
+**Decision:** Accepted on 4 September 2026
+
+Every withdrawal binds to exactly one enabled server-selected Fireblocks PRIMARY
+treasury wallet before approval. The stored route supplies the provider vault
+and provider asset identifiers; the internal asset-network ID is never sent as
+a provider asset identifier. Clients cannot select or replace this route.
+
+Initial submission and ambiguous-result recovery share one PostgreSQL leased
+job. A reclaimed SUBMITTING or SUBMISSION_UNKNOWN job performs lookup by the
+stable Fireblocks external transaction ID before any further action. Fireblocks
+terminal statuses are not, by themselves, proof of failure before broadcast, so
+they move the withdrawal to RECONCILIATION_REQUIRED and keep the Sendaza lock.
+Only separate, auditable proof of pre-broadcast failure may produce
+FAILED_BEFORE_BROADCAST.
+
+The MVP has no authenticated manual-review command. A withdrawal above the
+automatic threshold therefore fails before record creation with
+WITHDRAWAL_REQUIRES_MANUAL_REVIEW; it is not stored in an inert CREATED state.
+This decision must be superseded when the manual-review workflow is implemented.
+Sprint 8 policy evaluation also fails closed on unsupported address families,
+stale or excessive current fee evidence, stale or insufficient custody
+inventory, missing token gas routes, exhausted gas reserves, configured daily
+customer velocity, and configured first-time-destination review. Wallet
+selection and the available-balance check serialize on the selected wallet row
+so concurrent requests cannot approve against the same cached capacity.
+External compliance screening remains a production launch gate until an
+approved provider supplies persisted evidence.

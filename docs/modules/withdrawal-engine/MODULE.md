@@ -3,13 +3,12 @@
 ## Purpose and Boundary
 
 The Withdrawal Engine consumes an unexpired Sprint 7 withdrawal fee quote,
-evaluates withdrawal policy, submits an external blockchain transfer through
-Fireblocks MPC custody, and tracks that transfer through broadcast,
-replacement, and independently verified finality. Sprint 8 delivered safe
-submission, lookup-based timeout recovery, rejection, and the unresolved
-`SUBMISSION_UNKNOWN` state, stopping at `SUBMITTED`. Sprint 9 (this addendum)
-delivers everything from `SUBMITTED` onward: webhook ingestion, transaction
-replacement, independent confirmation, and finality.
+evaluates withdrawal policy, and submits an external blockchain transfer
+through Fireblocks MPC custody. Sprint 8 stops at safe submission, lookup-based
+timeout recovery, rejection, and the unresolved `SUBMISSION_UNKNOWN` state.
+Transaction replacement, webhook processing, independent confirmation
+verification, and on-chain finality are Sprint 9 scope and are not implemented
+here.
 
 SLE never locks, debits, credits, or edits a Sendaza customer balance. Sendaza
 is the sole customer ledger system of record. A withdrawal creates a real
@@ -64,7 +63,7 @@ Any uncertain state     -> RECONCILIATION_REQUIRED
 ```
 
 `BROADCASTED` and beyond (`CONFIRMING`, `CONFIRMED`, `REPLACED`,
-`FAILED_ON_CHAIN`) are defined in `docs/ARCHITECTURE.md` §5 and remain that
+`FAILED_ON_CHAIN`) are defined in `docs/ARCHITECTURE.md` Ã‚Â§5 and remain that
 diagram's authority; Sprint 8 only reaches `SUBMITTED`/`SUBMISSION_UNKNOWN` and
 records `provider_transfer_id` when Fireblocks returns one, but does not track
 broadcast or confirmation. Sprint 9 picks up from `SUBMITTED` onward.
@@ -187,187 +186,48 @@ delivered at least once through the existing signed Sendaza webhook outbox.
   checks, and on-chain finality are explicitly out of scope for Sprint 8 and
   are specified separately for Sprint 9.
 
----
+## Sprint 8 Safety Clarifications
 
-# Sprint 9 Addendum: Webhooks and Blockchain Finality
+Each withdrawal is bound before approval to exactly one enabled, server-selected
+Fireblocks PRIMARY treasury wallet. The immutable wallet record supplies the
+provider vault ID and provider asset ID. SLE never sends its internal
+asset-network UUID as a Fireblocks asset identifier, and callers cannot choose
+the wallet.
 
-## Purpose and Boundary
+Initial submission and recovery use the same leased PostgreSQL job. When a
+worker reclaims a withdrawal already in SUBMITTING or SUBMISSION_UNKNOWN, it
+performs a Fireblocks lookup by external transaction ID instead of blindly
+creating another transfer. Provider terminal statuses without independent
+pre-broadcast proof move to RECONCILIATION_REQUIRED and keep the Sendaza lock.
 
-Sprint 9 begins where Sprint 8 stops: a `SUBMITTED` withdrawal with a known
-`provider_transfer_id`. It tracks that transfer to `BROADCASTED`, `CONFIRMING`,
-and `CONFIRMED`, or to `REPLACED`/`FAILED_ON_CHAIN`, using both Fireblocks
-webhooks and an independent polling reconciler, plus an independent
-blockchain confirmation check for important-wallet asset-networks (mirroring
-the Sprint 5 treasury verification policy). It does not change submission,
-policy evaluation, or fee economics, and it does not release a Sendaza lock
-early: `CONFIRMED` is the only state after `SUBMITTED` that lets Sendaza treat
-the withdrawal as settled.
+The authenticated manual-review workflow is not implemented in Sprint 8.
+Requests above the automatic threshold therefore fail before withdrawal
+creation with WITHDRAWAL_REQUIRES_MANUAL_REVIEW instead of leaving an inert
+CREATED record. The configured maximum fee-quote age is enforced during
+creation in addition to the quote expiry timestamp.
+## Implemented MVP Policy Gates
 
-## State Machine
+Before a withdrawal record is created, the repository evaluates all available
+SLE-owned evidence in one database transaction:
 
-```text
-SUBMITTED
-  -> BROADCASTED
-  -> CONFIRMING
-  -> CONFIRMED
+- The destination must match the quote and pass the configured network address
+  family. Sprint 8 enables EVM validation; unsupported production address
+  families fail closed. TEST addresses exist only for isolated integration data.
+- The latest accepted network-fee snapshot must still be fresh. Its buffered
+  native fee cannot exceed the quote evidence by more than the active policy
+  execution tolerance.
+- The selected PRIMARY wallet requires fresh custody evidence and, when
+  configured, independent MATCHED verification.
+- Available wallet balance must cover the requested principal, configured safety
+  buffer, and withdrawals committed since the cached evidence was observed.
+  Approval locks the wallet row, preventing concurrent over-approval.
+- Token withdrawals require exactly one enabled GAS wallet on the same network.
+  Fresh gas-wallet evidence must cover the current buffered native fee while
+  preserving its configured gas reserve.
+- Optional daily per-customer amount and count limits, and optional
+  first-time-destination review, are versioned policy fields. A triggered review
+  fails before record creation until the authenticated review workflow exists.
 
-BROADCASTED/CONFIRMING -> REPLACED         (fee bump or stuck-transaction resubmission)
-BROADCASTED/CONFIRMING -> FAILED_ON_CHAIN  (reverted or dropped after broadcast)
-Any of the above       -> RECONCILIATION_REQUIRED  (evidence disagreement or timeout)
-```
-
-This extends, without altering, the Sprint 8 machine: `SUBMITTED` remains a
-valid terminal state for a withdrawal that has not yet broadcast, and none of
-Sprint 8's states or transitions change. `REPLACED` and `FAILED_ON_CHAIN` are
-themselves non-terminal with respect to lock release: only `CONFIRMED` proves
-the transfer settled, and only a proven `FAILED_ON_CHAIN` with an
-independently confirmed zero-effect chain state (never a webhook claim alone)
-allows fund release consideration — and even then the release decision is a
-reconciliation/operations action, not automatic, because a withdrawal past
-`SUBMITTED` has already left the custody provider's exclusive control.
-
-## Webhook Ingestion
-
-Fireblocks webhooks are external, unauthenticated-by-default HTTP requests and
-therefore untrusted input until verified. Every inbound webhook:
-
-1. Is persisted verbatim (raw body, headers, received-at) **before** signature
-   verification or business processing, so a crash after receipt never loses
-   the evidence — this mirrors the inbound-event rule already used for
-   Sendaza-bound events in `docs/API_SPEC.md` §6.
-2. Has its Fireblocks signature verified against the raw body; an invalid
-   signature is stored with a `REJECTED_SIGNATURE` status and never reaches
-   withdrawal state.
-3. Is deduplicated by Fireblocks' own webhook event ID (unique constraint);
-   a duplicate delivery is acknowledged `2xx` without reapplying any effect,
-   matching the existing "delivery is at least once, consumers are idempotent
-   by event ID" rule.
-4. Is processed only after successful persistence and signature verification,
-   inside its own PostgreSQL transaction — never inside the HTTP handler's
-   response-blocking path, so a slow or failing side effect cannot stall the
-   webhook acknowledgement Fireblocks expects.
-5. Can never regress a withdrawal to an earlier state: an out-of-order or
-   delayed webhook (e.g., a `SUBMITTED` event arriving after `CONFIRMED` was
-   already recorded from an earlier webhook or poll) is accepted for audit
-   but does not change `withdrawals.status` if the new state is not strictly
-   ahead of the current one in the state machine above.
-
-## Independent Polling Reconciliation
-
-Webhooks may be duplicated, delayed, reordered, or **lost entirely** — SLE
-cannot assume delivery. A bounded poller independently re-derives state for
-every non-terminal, post-`SUBMITTED` withdrawal:
-
-```text
-due withdrawal (status in SUBMITTED/BROADCASTED/CONFIRMING, past its poll interval)
-              |
-              v
-Fireblocks.getTransfer(provider_transfer_id) -- provider-reported status/hash
-              |
-              v
-important-wallet asset-network? --yes--> independent chain adapter lookup by tx hash
-              |                                        |
-              no                                MATCH / MISMATCH / STALE
-              |                                        |
-              v                                        v
-     apply provider status alone           MISMATCH/STALE -> RECONCILIATION_REQUIRED
-                                            MATCH -> apply confirmed status
-```
-
-This is the same "important wallet requires independent verification, provider
-claim alone is insufficient" rule Sprint 5 already applies to treasury
-balances, extended to withdrawal confirmation. The poller and the webhook
-handler share one state-transition function so both paths enforce identical
-forward-only rules and identical evidence requirements.
-
-## Transaction Replacement
-
-A withdrawal may be resubmitted with a bumped fee (RBF-style) or as a fresh
-attempt after a stuck unconfirmed transaction. Replacement:
-
-- Never mutates the original transaction-hash record; a new
-  `withdrawal_transaction_hashes` row is inserted with
-  `replacement_of_id` pointing at the prior hash, preserving full history.
-- Requires the same `externalTxId` idempotency discipline as Sprint 8:
-  Fireblocks' own replacement/resubmission flow is used so SLE never invents
-  a second independent transfer for the same withdrawal.
-- Moves the withdrawal to `REPLACED` only as an intermediate marker while the
-  new hash is tracked; the withdrawal continues through `CONFIRMING` ->
-  `CONFIRMED` under the replacement hash, and `current_tx_hash` always points
-  at the currently tracked hash.
-- A withdrawal can be replaced multiple times; the hash chain is fully
-  auditable via `replacement_of_id`.
-
-## Finality Rules
-
-- `CONFIRMED` requires the asset-network's configured
-  `required_confirmations` from the provider **and**, for an important-wallet
-  asset-network, an independently matching chain-adapter confirmation count.
-  A provider-only report is insufficient for those asset-networks, matching
-  Sprint 5's treasury verification policy.
-- A dropped, reverted, or double-spent transaction after broadcast is
-  `FAILED_ON_CHAIN`, never silently retried as if it had not happened; it
-  requires operator/reconciliation review before any corrective action.
-- Confirmation count evidence and its `observed_at` timestamp are stored
-  immutably per observation, the same pattern as treasury snapshots and
-  network-fee observations, so finality is always reproducible from stored
-  evidence rather than recomputed from a live-only provider call.
-
-## Failure Rules
-
-- A broadcast transaction is not a confirmed transaction; `BROADCASTED` and
-  `CONFIRMING` are both non-terminal with respect to any customer-facing
-  settlement claim.
-- Webhook loss cannot lose state: the independent poller is the ultimate
-  authority, and its cadence is bounded specifically so no withdrawal can
-  remain stuck solely because a webhook never arrived.
-- A forged, delayed, reordered, or duplicated webhook cannot move a
-  withdrawal backward in the state machine, apply an effect twice, or bypass
-  signature verification.
-- Provider/chain evidence disagreement or staleness on an important wallet
-  never resolves in favor of the more optimistic status; it always escalates
-  to `RECONCILIATION_REQUIRED`.
-- Replacement retains, and never deletes or overwrites, prior transaction
-  hashes.
-- Financial state and its outbox event still commit in one PostgreSQL
-  transaction per step; the same no-open-transaction-across-an-external-call
-  rule from Sprint 8 applies to every Fireblocks/chain-adapter call this
-  sprint adds.
-
-## Responses and Events
-
-Adds `sle.withdrawal.broadcasted`, `sle.withdrawal.replaced`,
-`sle.withdrawal.confirmed`, and `sle.withdrawal.failed_on_chain` to the event
-set already defined for Sprint 8. All continue to use stable event IDs and
-the existing signed, at-least-once, idempotent-by-event-ID Sendaza webhook
-outbox.
-
-## Test Plan Additions
-
-- Duplicate, forged (invalid signature), delayed, reordered, and entirely
-  missing webhook scenarios, each proving state either advances correctly or
-  is correctly rejected/ignored without regression.
-- Provider/independent-chain agreement and disagreement on confirmation
-  count and transaction status for an important-wallet asset-network.
-- A stuck unconfirmed transaction replaced once, and replaced a second time,
-  with the full hash chain verified via `replacement_of_id`.
-- Sendaza/SLE restart at every external transition in this sprint (after
-  persisting a webhook but before processing it; after a poll observation but
-  before committing state; after committing `CONFIRMED` but before the
-  outbox event is delivered).
-
-## Known Dependencies and Open Decisions
-
-- Requires Sprint 8's `SUBMITTED` state and `provider_transfer_id` as its
-  entry point; does not revisit submission or policy evaluation.
-- Requires a `NetworkAdapter`-style independent chain lookup by transaction
-  hash and confirmation count, extending the read-only chain balance adapter
-  already used for Sprint 5 treasury verification (`docs/ARCHITECTURE.md`
-  §3) to transaction-level queries.
-- Fireblocks webhook signature verification scheme and replay-window
-  parameters must be confirmed against current Fireblocks documentation
-  before implementation; this is a pre-implementation research task, not an
-  open financial-invariant question.
-- Reconciliation of a proven `FAILED_ON_CHAIN` withdrawal into an automatic
-  or manual fund-release decision is deferred to the Sprint 11 Reconciliation
-  Gate; Sprint 9 only reaches and records `FAILED_ON_CHAIN` accurately.
+External denylist, sanctions, and travel-rule screening require an approved
+compliance provider and remain a production launch gate. SLE does not fabricate
+a screening result.

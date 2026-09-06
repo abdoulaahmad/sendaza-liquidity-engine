@@ -131,6 +131,7 @@ describe('withdrawal PostgreSQL integration', () => {
         publicAddress: '0x' + suffix,
         role: 'PRIMARY',
         status: 'ENABLED',
+        staleAfterSeconds: 3_600,
       },
     });
     await prisma.treasuryWallet.create({
@@ -144,6 +145,7 @@ describe('withdrawal PostgreSQL integration', () => {
         role: 'GAS',
         status: 'ENABLED',
         gasReserveAtomic: 1_000n,
+        staleAfterSeconds: 3_600,
       },
     });
     await prisma.treasurySnapshot.createMany({
@@ -165,7 +167,7 @@ describe('withdrawal PostgreSQL integration', () => {
           sellableAtomic: 1_000_000_000n,
           verificationStatus: 'MATCHED',
           observedAt: new Date('2026-09-03T07:30:00.000Z'),
-          expiresAt: new Date('2026-09-04T07:30:00.000Z'),
+          expiresAt: new Date('2026-09-03T08:30:00.000Z'),
         },
         {
           treasuryWalletId: ids.gasWallet,
@@ -180,11 +182,11 @@ describe('withdrawal PostgreSQL integration', () => {
           allocatedAtomic: 0n,
           safetyBufferAtomic: 0n,
           gasReserveAtomic: 1_000n,
-          unavailableAtomic: 1_000n,
+          unavailableAtomic: 0n,
           sellableAtomic: 999_000n,
           verificationStatus: 'MATCHED',
           observedAt: new Date('2026-09-03T07:30:00.000Z'),
-          expiresAt: new Date('2026-09-04T07:30:00.000Z'),
+          expiresAt: new Date('2026-09-03T08:30:00.000Z'),
         },
       ],
     });

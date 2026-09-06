@@ -63,7 +63,7 @@ Any uncertain state     -> RECONCILIATION_REQUIRED
 ```
 
 `BROADCASTED` and beyond (`CONFIRMING`, `CONFIRMED`, `REPLACED`,
-`FAILED_ON_CHAIN`) are defined in `docs/ARCHITECTURE.md` Ã‚Â§5 and remain that
+`FAILED_ON_CHAIN`) are defined in `docs/ARCHITECTURE.md` §5 and remain that
 diagram's authority; Sprint 8 only reaches `SUBMITTED`/`SUBMISSION_UNKNOWN` and
 records `provider_transfer_id` when Fireblocks returns one, but does not track
 broadcast or confirmation. Sprint 9 picks up from `SUBMITTED` onward.
@@ -240,9 +240,10 @@ a screening result.
 
 This is a specification for Sprint 9, not a claim that the behavior is already
 implemented. It is based on the corrected Sprint 8 implementation in commit
-b63aa3f. Sprint 9 starts with a withdrawal in SUBMITTED and a stored Fireblocks
-transfer identifier. It must not weaken Sprint 8 wallet binding, policy gates,
-leased recovery, or uncertain-outcome rules.
+9c10bcf (merged via #13), further hardened in commit 3bb7b56 (custody routing
+and policy gates). Sprint 9 starts with a withdrawal in SUBMITTED and a stored
+Fireblocks transfer identifier. It must not weaken Sprint 8 wallet binding,
+policy gates, leased recovery, or uncertain-outcome rules.
 
 Sprint 9 is not ready for production until its forward migration, webhook
 receiver, reconciliation workers, provider and chain adapters, tests, and

@@ -11,7 +11,65 @@ export type WithdrawalStatus =
   | 'REJECTED'
   | 'SUBMISSION_UNKNOWN'
   | 'FAILED_BEFORE_BROADCAST'
-  | 'RECONCILIATION_REQUIRED';
+  | 'RECONCILIATION_REQUIRED'
+  | 'BROADCASTED'
+  | 'CONFIRMING'
+  | 'CONFIRMED'
+  | 'REPLACED'
+  | 'FAILED_ON_CHAIN';
+
+const WITHDRAWAL_TRANSITIONS: Readonly<Record<WithdrawalStatus, readonly WithdrawalStatus[]>> = {
+  CREATED: ['POLICY_APPROVED', 'CANCELLED', 'REJECTED'],
+  POLICY_APPROVED: ['SUBMITTING', 'CANCELLED', 'REJECTED'],
+  SUBMITTING: [
+    'SUBMITTED',
+    'SUBMISSION_UNKNOWN',
+    'FAILED_BEFORE_BROADCAST',
+    'RECONCILIATION_REQUIRED',
+  ],
+  SUBMISSION_UNKNOWN: ['SUBMITTED', 'FAILED_BEFORE_BROADCAST', 'RECONCILIATION_REQUIRED'],
+  SUBMITTED: [
+    'BROADCASTED',
+    'CONFIRMING',
+    'CONFIRMED',
+    'REPLACED',
+    'FAILED_ON_CHAIN',
+    'RECONCILIATION_REQUIRED',
+  ],
+  BROADCASTED: [
+    'CONFIRMING',
+    'CONFIRMED',
+    'REPLACED',
+    'FAILED_ON_CHAIN',
+    'RECONCILIATION_REQUIRED',
+  ],
+  CONFIRMING: ['CONFIRMED', 'REPLACED', 'FAILED_ON_CHAIN', 'RECONCILIATION_REQUIRED'],
+  REPLACED: ['CONFIRMING', 'CONFIRMED', 'FAILED_ON_CHAIN', 'RECONCILIATION_REQUIRED'],
+  CONFIRMED: [],
+  FAILED_ON_CHAIN: [],
+  CANCELLED: [],
+  REJECTED: [],
+  FAILED_BEFORE_BROADCAST: [],
+  RECONCILIATION_REQUIRED: [],
+};
+
+export function isWithdrawalTransitionAllowed(
+  from: WithdrawalStatus,
+  to: WithdrawalStatus,
+): boolean {
+  return WITHDRAWAL_TRANSITIONS[from].includes(to);
+}
+
+export function isWithdrawalFinalityTerminal(status: WithdrawalStatus): boolean {
+  return [
+    'CONFIRMED',
+    'FAILED_ON_CHAIN',
+    'CANCELLED',
+    'REJECTED',
+    'FAILED_BEFORE_BROADCAST',
+    'RECONCILIATION_REQUIRED',
+  ].includes(status);
+}
 
 export interface StoredWithdrawal {
   readonly id: string;
@@ -32,6 +90,11 @@ export interface StoredWithdrawal {
   readonly cancelledAt?: Date;
   readonly rejectedAt?: Date;
   readonly submittedAt?: Date;
+  readonly broadcastedAt?: Date;
+  readonly confirmingAt?: Date;
+  readonly confirmedAt?: Date;
+  readonly replacedAt?: Date;
+  readonly failedOnChainAt?: Date;
   readonly failedBeforeBroadcastAt?: Date;
   readonly reconciliationRequiredAt?: Date;
 }
@@ -153,6 +216,11 @@ export interface WithdrawalView {
   readonly cancelledAt?: string;
   readonly rejectedAt?: string;
   readonly submittedAt?: string;
+  readonly broadcastedAt?: string;
+  readonly confirmingAt?: string;
+  readonly confirmedAt?: string;
+  readonly replacedAt?: string;
+  readonly failedOnChainAt?: string;
   readonly failedBeforeBroadcastAt?: string;
   readonly reconciliationRequiredAt?: string;
 }
@@ -315,6 +383,13 @@ function view(withdrawal: StoredWithdrawal): WithdrawalView {
     ...(withdrawal.cancelledAt ? { cancelledAt: withdrawal.cancelledAt.toISOString() } : {}),
     ...(withdrawal.rejectedAt ? { rejectedAt: withdrawal.rejectedAt.toISOString() } : {}),
     ...(withdrawal.submittedAt ? { submittedAt: withdrawal.submittedAt.toISOString() } : {}),
+    ...(withdrawal.broadcastedAt ? { broadcastedAt: withdrawal.broadcastedAt.toISOString() } : {}),
+    ...(withdrawal.confirmingAt ? { confirmingAt: withdrawal.confirmingAt.toISOString() } : {}),
+    ...(withdrawal.confirmedAt ? { confirmedAt: withdrawal.confirmedAt.toISOString() } : {}),
+    ...(withdrawal.replacedAt ? { replacedAt: withdrawal.replacedAt.toISOString() } : {}),
+    ...(withdrawal.failedOnChainAt
+      ? { failedOnChainAt: withdrawal.failedOnChainAt.toISOString() }
+      : {}),
     ...(withdrawal.failedBeforeBroadcastAt
       ? { failedBeforeBroadcastAt: withdrawal.failedBeforeBroadcastAt.toISOString() }
       : {}),

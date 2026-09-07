@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import {
   StoredWithdrawal,
@@ -557,6 +557,7 @@ export class PrismaWithdrawalSubmissionJobRepository implements WithdrawalSubmis
 
       const withdrawal = await tx.withdrawal.findUniqueOrThrow({
         where: { id: claim.withdrawalId },
+        include: { feeQuote: true, treasuryWallet: true },
       });
       if (withdrawal.status !== 'SUBMITTING' && withdrawal.status !== 'SUBMISSION_UNKNOWN') {
         throw new Error('WITHDRAWAL_SUBMISSION_STATE_CHANGED');
@@ -588,6 +589,24 @@ export class PrismaWithdrawalSubmissionJobRepository implements WithdrawalSubmis
           ...(outcome.kind === 'RECONCILIATION_REQUIRED' ? { reconciliationRequiredAt: now } : {}),
         },
       });
+      if (outcome.kind === 'SUBMITTED') {
+        await tx.withdrawalTransactionAttempt.create({
+          data: {
+            withdrawalId: withdrawal.id,
+            attemptNumber: 1,
+            externalTxId: withdrawal.externalTxId,
+            providerTransferId: outcome.providerTransferId,
+            requestHash: submissionRequestHash(withdrawal),
+            status: 'SUBMITTED',
+            isCurrent: true,
+            submittedAt: now,
+          },
+        });
+        await tx.withdrawalFinalityJob.create({
+          data: { withdrawalId: withdrawal.id, dueAt: now },
+        });
+      }
+
       await tx.withdrawalTransition.create({
         data: {
           withdrawalId: claim.withdrawalId,
@@ -658,9 +677,34 @@ function mapWithdrawal(
     ...(w.cancelledAt ? { cancelledAt: w.cancelledAt } : {}),
     ...(w.rejectedAt ? { rejectedAt: w.rejectedAt } : {}),
     ...(w.submittedAt ? { submittedAt: w.submittedAt } : {}),
+    ...(w.broadcastedAt ? { broadcastedAt: w.broadcastedAt } : {}),
+    ...(w.confirmingAt ? { confirmingAt: w.confirmingAt } : {}),
+    ...(w.confirmedAt ? { confirmedAt: w.confirmedAt } : {}),
+    ...(w.replacedAt ? { replacedAt: w.replacedAt } : {}),
+    ...(w.failedOnChainAt ? { failedOnChainAt: w.failedOnChainAt } : {}),
     ...(w.failedBeforeBroadcastAt ? { failedBeforeBroadcastAt: w.failedBeforeBroadcastAt } : {}),
     ...(w.reconciliationRequiredAt ? { reconciliationRequiredAt: w.reconciliationRequiredAt } : {}),
   };
+}
+function submissionRequestHash(withdrawal: {
+  externalTxId: string;
+  destinationAddress: string;
+  principalAtomic: bigint;
+  feeQuote: { assetDecimals: number };
+  treasuryWallet: { providerVaultId: string; providerAssetId: string };
+}): string {
+  return createHash('sha256')
+    .update(
+      [
+        withdrawal.externalTxId,
+        withdrawal.treasuryWallet.providerVaultId,
+        withdrawal.treasuryWallet.providerAssetId,
+        withdrawal.destinationAddress,
+        withdrawal.principalAtomic.toString(),
+        withdrawal.feeQuote.assetDecimals.toString(),
+      ].join('|'),
+    )
+    .digest('hex');
 }
 function validDestinationAddress(addressFamily: string, address: string): boolean {
   if (addressFamily === 'EVM') return /^0x[0-9a-fA-F]{40}$/.test(address);

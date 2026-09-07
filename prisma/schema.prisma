@@ -299,6 +299,7 @@ model TreasuryWallet {
   snapshots            TreasurySnapshot[]
   syncJob              TreasurySyncJob?
   fundingIntents       TreasuryFundingIntent[]
+  routedWithdrawals    Withdrawal[]                 @relation("WithdrawalTreasuryWallet")
   createdAt            DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime                     @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -561,21 +562,24 @@ model WithdrawalFeeQuote {
 }
 
 model WithdrawalPolicyVersion {
-  id                       String                  @id @default(uuid()) @db.Uuid
-  assetNetworkId           String                  @map("asset_network_id") @db.Uuid
-  assetNetwork             AssetNetwork            @relation(fields: [assetNetworkId], references: [id], onDelete: Restrict)
-  version                  Int
-  transferType             NetworkTransferType     @map("transfer_type")
-  autoApproveMaxAtomic     BigInt                  @map("auto_approve_max_atomic")
-  maxFeeQuoteAgeSeconds    Int                     @map("max_fee_quote_age_seconds")
-  status                   WithdrawalPolicyStatus  @default(ACTIVE)
-  configurationVersionId   Int                     @map("configuration_version_id")
-  configurationVersion     ConfigurationVersion    @relation(fields: [configurationVersionId], references: [id], onDelete: Restrict)
-  actorId                  String                  @map("actor_id") @db.VarChar(100)
-  reason                   String                  @db.VarChar(255)
-  effectiveFrom            DateTime                @map("effective_from") @db.Timestamptz(6)
-  createdAt                DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
-  withdrawals              Withdrawal[]
+  id                        String                 @id @default(uuid()) @db.Uuid
+  assetNetworkId            String                 @map("asset_network_id") @db.Uuid
+  assetNetwork              AssetNetwork           @relation(fields: [assetNetworkId], references: [id], onDelete: Restrict)
+  version                   Int
+  transferType              NetworkTransferType    @map("transfer_type")
+  autoApproveMaxAtomic      BigInt                 @map("auto_approve_max_atomic")
+  maxFeeQuoteAgeSeconds     Int                    @map("max_fee_quote_age_seconds")
+  dailyCustomerLimitAtomic  BigInt?                @map("daily_customer_limit_atomic")
+  dailyCustomerCountLimit   Int?                   @map("daily_customer_count_limit")
+  allowFirstTimeDestination Boolean                @default(true) @map("allow_first_time_destination")
+  status                    WithdrawalPolicyStatus @default(ACTIVE)
+  configurationVersionId    Int                    @map("configuration_version_id")
+  configurationVersion      ConfigurationVersion   @relation(fields: [configurationVersionId], references: [id], onDelete: Restrict)
+  actorId                   String                 @map("actor_id") @db.VarChar(100)
+  reason                    String                 @db.VarChar(255)
+  effectiveFrom             DateTime               @map("effective_from") @db.Timestamptz(6)
+  createdAt                 DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  withdrawals               Withdrawal[]
 
   @@unique([assetNetworkId, transferType, version])
   @@index([assetNetworkId, transferType, status, effectiveFrom])
@@ -588,6 +592,8 @@ model Withdrawal {
   feeQuote                 WithdrawalFeeQuote       @relation(fields: [feeQuoteId], references: [id], onDelete: Restrict)
   assetNetworkId           String                   @map("asset_network_id") @db.Uuid
   assetNetwork             AssetNetwork             @relation(fields: [assetNetworkId], references: [id], onDelete: Restrict)
+  treasuryWalletId         String                   @map("treasury_wallet_id") @db.Uuid
+  treasuryWallet           TreasuryWallet           @relation("WithdrawalTreasuryWallet", fields: [treasuryWalletId], references: [id], onDelete: Restrict)
   policyId                 String                   @map("policy_id") @db.Uuid
   policy                   WithdrawalPolicyVersion  @relation(fields: [policyId], references: [id], onDelete: Restrict)
   customerReference        String                   @map("customer_reference") @db.VarChar(100)
@@ -616,14 +622,14 @@ model Withdrawal {
 }
 
 model WithdrawalTransition {
-  id            String           @id @default(uuid()) @db.Uuid
-  withdrawalId  String           @map("withdrawal_id") @db.Uuid
-  withdrawal    Withdrawal       @relation(fields: [withdrawalId], references: [id], onDelete: Restrict)
+  id            String            @id @default(uuid()) @db.Uuid
+  withdrawalId  String            @map("withdrawal_id") @db.Uuid
+  withdrawal    Withdrawal        @relation(fields: [withdrawalId], references: [id], onDelete: Restrict)
   fromStatus    WithdrawalStatus? @map("from_status")
-  toStatus      WithdrawalStatus @map("to_status")
-  reasonCode    String           @map("reason_code") @db.VarChar(100)
-  correlationId String           @map("correlation_id") @db.Uuid
-  occurredAt    DateTime         @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  toStatus      WithdrawalStatus  @map("to_status")
+  reasonCode    String            @map("reason_code") @db.VarChar(100)
+  correlationId String            @map("correlation_id") @db.Uuid
+  occurredAt    DateTime          @default(now()) @map("occurred_at") @db.Timestamptz(6)
 
   @@index([withdrawalId, occurredAt])
   @@map("withdrawal_transitions")

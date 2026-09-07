@@ -21,10 +21,21 @@ type FeeQuoteRow = {
   principal: bigint;
   totaldebit: bigint;
   assetdecimals: number;
+  bufferednativefee: bigint;
   expiresat: Date;
+  createdat: Date;
   withdrawalid: string | null;
+  addressfamily: string;
 };
-type PolicyRow = { id: string; autoapprovemaxatomic: bigint };
+type PolicyRow = {
+  id: string;
+  autoapprovemaxatomic: bigint;
+  maxfeequoteageseconds: number;
+  dailycustomerlimitatomic: bigint | null;
+  dailycustomercountlimit: number | null;
+  allowfirsttimedestination: boolean;
+};
+type WalletRow = { id: string };
 
 @Injectable()
 export class PrismaWithdrawalRepository implements WithdrawalRepository {
@@ -40,8 +51,13 @@ export class PrismaWithdrawalRepository implements WithdrawalRepository {
             SELECT q.id, q.asset_network_id AS assetNetworkId, q.transfer_type AS transferType,
               q.destination_address AS destinationAddress, q.principal_atomic AS principal,
               q.total_debit_atomic AS totalDebit, q.asset_decimals AS assetDecimals,
-              q.expires_at AS expiresAt, w.id AS withdrawalId
-            FROM withdrawal_fee_quotes q LEFT JOIN withdrawals w ON w.fee_quote_id = q.id
+              q.buffered_native_fee_atomic AS bufferedNativeFee,
+              q.expires_at AS expiresAt, q.created_at AS createdAt, w.id AS withdrawalId,
+              network.address_family AS addressFamily
+            FROM withdrawal_fee_quotes q
+            JOIN asset_networks asset_network ON asset_network.id = q.asset_network_id
+            JOIN networks network ON network.id = asset_network.network_id
+            LEFT JOIN withdrawals w ON w.fee_quote_id = q.id
             WHERE q.id = ${input.feeQuoteId}::uuid FOR UPDATE OF q
           `);
           const quote = quotes[0];
@@ -53,9 +69,16 @@ export class PrismaWithdrawalRepository implements WithdrawalRepository {
           if (quote.destinationaddress !== input.destinationAddress) {
             return failure('DESTINATION_ADDRESS_MISMATCH');
           }
+          if (!validDestinationAddress(quote.addressfamily, input.destinationAddress)) {
+            return failure('DESTINATION_ADDRESS_INVALID');
+          }
 
           const policies = await tx.$queryRaw<PolicyRow[]>(Prisma.sql`
-            SELECT id, auto_approve_max_atomic AS autoApproveMaxAtomic
+            SELECT id, auto_approve_max_atomic AS autoApproveMaxAtomic,
+              max_fee_quote_age_seconds AS maxFeeQuoteAgeSeconds,
+              daily_customer_limit_atomic AS dailyCustomerLimitAtomic,
+              daily_customer_count_limit AS dailyCustomerCountLimit,
+              allow_first_time_destination AS allowFirstTimeDestination
             FROM withdrawal_policy_versions
             WHERE asset_network_id = ${quote.assetnetworkid}::uuid
               AND transfer_type = ${quote.transfertype}::"NetworkTransferType"
@@ -64,6 +87,200 @@ export class PrismaWithdrawalRepository implements WithdrawalRepository {
           `);
           const policy = policies[0];
           if (!policy) return failure('WITHDRAWAL_POLICY_UNAVAILABLE');
+          const quoteAgeMs = input.createdAt.getTime() - quote.createdat.getTime();
+          if (quoteAgeMs > policy.maxfeequoteageseconds * 1000) {
+            return failure('FEE_QUOTE_EXPIRED');
+          }
+          if (quote.principal > policy.autoapprovemaxatomic) {
+            return failure('WITHDRAWAL_REQUIRES_MANUAL_REVIEW');
+          }
+
+          const dayStart = new Date(input.createdAt);
+          dayStart.setUTCHours(0, 0, 0, 0);
+          const customerVelocity = await tx.withdrawal.aggregate({
+            where: {
+              customerReference: input.customerReference,
+              assetNetworkId: quote.assetnetworkid,
+              createdAt: { gte: dayStart, lte: input.createdAt },
+              status: {
+                in: [
+                  'CREATED',
+                  'POLICY_APPROVED',
+                  'SUBMITTING',
+                  'SUBMITTED',
+                  'SUBMISSION_UNKNOWN',
+                  'RECONCILIATION_REQUIRED',
+                ],
+              },
+            },
+            _sum: { principalAtomic: true },
+            _count: { _all: true },
+          });
+          if (
+            policy.dailycustomerlimitatomic !== null &&
+            (customerVelocity._sum.principalAtomic ?? 0n) + quote.principal >
+              policy.dailycustomerlimitatomic
+          ) {
+            return failure('WITHDRAWAL_REQUIRES_MANUAL_REVIEW');
+          }
+          if (
+            policy.dailycustomercountlimit !== null &&
+            customerVelocity._count._all + 1 > policy.dailycustomercountlimit
+          ) {
+            return failure('WITHDRAWAL_REQUIRES_MANUAL_REVIEW');
+          }
+          if (!policy.allowfirsttimedestination) {
+            const knownDestination = await tx.withdrawal.findFirst({
+              where: {
+                customerReference: input.customerReference,
+                assetNetworkId: quote.assetnetworkid,
+                destinationAddress: input.destinationAddress,
+                status: 'SUBMITTED',
+              },
+              select: { id: true },
+            });
+            if (!knownDestination) return failure('WITHDRAWAL_REQUIRES_MANUAL_REVIEW');
+          }
+
+          const wallets = await tx.$queryRaw<WalletRow[]>(Prisma.sql`
+            SELECT wallet.id
+            FROM treasury_wallets wallet
+            JOIN custody_providers provider ON provider.id = wallet.custody_provider_id
+            WHERE wallet.asset_network_id = ${quote.assetnetworkid}::uuid
+              AND wallet.role = 'PRIMARY'
+              AND wallet.status = 'ENABLED'
+              AND provider.status = 'ENABLED'
+              AND provider.type = 'FIREBLOCKS'
+            ORDER BY wallet.created_at, wallet.id
+            LIMIT 2
+            FOR UPDATE OF wallet
+          `);
+          if (wallets.length !== 1) return failure('CUSTODY_ROUTE_UNAVAILABLE');
+          const treasuryWallet = wallets[0];
+
+          const currentFee = await tx.networkFeeSnapshot.findFirst({
+            where: {
+              status: 'ACCEPTED',
+              expiresAt: { gt: input.createdAt },
+              policy: {
+                assetNetworkId: quote.assetnetworkid,
+                transferType: quote.transfertype,
+                status: 'ACTIVE',
+                effectiveFrom: { lte: input.createdAt },
+              },
+            },
+            orderBy: { calculatedAt: 'desc' },
+            include: { policy: true },
+          });
+          if (!currentFee?.bufferedNativeFeeAtomic) {
+            return failure('NETWORK_FEE_EVIDENCE_UNAVAILABLE');
+          }
+          const basisPoints = 10_000n;
+          const allowedBufferedFee =
+            quote.bufferednativefee *
+            (basisPoints + BigInt(currentFee.policy.executionToleranceBps));
+          if (currentFee.bufferedNativeFeeAtomic * basisPoints > allowedBufferedFee) {
+            return failure('NETWORK_FEE_TOLERANCE_EXCEEDED');
+          }
+
+          const route = await tx.treasuryWallet.findUniqueOrThrow({
+            where: { id: treasuryWallet.id },
+            include: {
+              assetNetwork: { include: { network: true } },
+              snapshots: {
+                where: { expiresAt: { gt: input.createdAt } },
+                orderBy: { observedAt: 'desc' },
+                take: 1,
+              },
+            },
+          });
+          const routeEvidence = route.snapshots[0];
+          if (
+            !routeEvidence ||
+            (route.verificationRequired && routeEvidence.verificationStatus !== 'MATCHED')
+          ) {
+            return failure('TREASURY_EVIDENCE_UNAVAILABLE');
+          }
+
+          const committedSinceEvidence = await tx.withdrawal.aggregate({
+            where: {
+              treasuryWalletId: route.id,
+              createdAt: { gt: routeEvidence.observedAt, lte: input.createdAt },
+              status: {
+                in: [
+                  'POLICY_APPROVED',
+                  'SUBMITTING',
+                  'SUBMITTED',
+                  'SUBMISSION_UNKNOWN',
+                  'RECONCILIATION_REQUIRED',
+                ],
+              },
+            },
+            _sum: { principalAtomic: true },
+            _count: { _all: true },
+          });
+          const committedPrincipal = committedSinceEvidence._sum.principalAtomic ?? 0n;
+          if (quote.transfertype === 'NATIVE') {
+            const committedFees =
+              BigInt(committedSinceEvidence._count._all) * currentFee.bufferedNativeFeeAtomic;
+            const required =
+              committedPrincipal +
+              committedFees +
+              quote.principal +
+              currentFee.bufferedNativeFeeAtomic +
+              route.gasReserveAtomic;
+            if (routeEvidence.providerAvailableAtomic < required) {
+              return failure('TREASURY_INSUFFICIENT');
+            }
+          } else {
+            if (
+              routeEvidence.providerAvailableAtomic <
+              committedPrincipal + quote.principal + route.safetyBufferAtomic
+            ) {
+              return failure('TREASURY_INSUFFICIENT');
+            }
+            const nativeAssetNetwork = await tx.assetNetwork.findUnique({
+              where: {
+                assetId_networkId: {
+                  assetId: route.assetNetwork.network.nativeAssetId,
+                  networkId: route.assetNetwork.networkId,
+                },
+              },
+            });
+            if (!nativeAssetNetwork) return failure('GAS_RESERVE_INSUFFICIENT');
+            const gasWallets = await tx.treasuryWallet.findMany({
+              where: {
+                assetNetworkId: nativeAssetNetwork.id,
+                role: 'GAS',
+                status: 'ENABLED',
+                custodyProvider: { type: 'FIREBLOCKS', status: 'ENABLED' },
+              },
+              orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+              take: 2,
+              include: {
+                snapshots: {
+                  where: { expiresAt: { gt: input.createdAt } },
+                  orderBy: { observedAt: 'desc' },
+                  take: 1,
+                },
+              },
+            });
+            if (gasWallets.length !== 1) return failure('GAS_RESERVE_INSUFFICIENT');
+            const gasWallet = gasWallets[0];
+            const gasEvidence = gasWallet.snapshots[0];
+            if (
+              !gasEvidence ||
+              (gasWallet.verificationRequired && gasEvidence.verificationStatus !== 'MATCHED')
+            ) {
+              return failure('TREASURY_EVIDENCE_UNAVAILABLE');
+            }
+            if (
+              gasEvidence.providerAvailableAtomic <
+              currentFee.bufferedNativeFeeAtomic + gasWallet.gasReserveAtomic
+            ) {
+              return failure('GAS_RESERVE_INSUFFICIENT');
+            }
+          }
 
           const withdrawalId = randomUUID();
           // The withdrawal's own ID is supplied to Fireblocks as externalTxId so
@@ -76,6 +293,7 @@ export class PrismaWithdrawalRepository implements WithdrawalRepository {
               feeQuoteId: quote.id,
               assetNetworkId: quote.assetnetworkid,
               policyId: policy.id,
+              treasuryWalletId: treasuryWallet.id,
               customerReference: input.customerReference,
               clientLockReference: input.clientLockReference,
               clientReference: input.clientReference,
@@ -96,26 +314,7 @@ export class PrismaWithdrawalRepository implements WithdrawalRepository {
               occurredAt: input.createdAt,
             },
           });
-          await tx.outboxEvent.create({
-            data: {
-              aggregateType: 'withdrawal',
-              aggregateId: withdrawalId,
-              eventType: 'sle.withdrawal.policy_approved',
-              correlationId: input.correlationId,
-              payload: {
-                withdrawalId,
-                feeQuoteId: quote.id,
-                clientReference: input.clientReference,
-                assetNetworkId: quote.assetnetworkid,
-                status: 'CREATED',
-              },
-            },
-          });
-
-          const policyApproved =
-            quote.totaldebit <= policy.autoapprovemaxatomic
-              ? await this.approvePolicy(tx, withdrawalId, input.correlationId, input.createdAt)
-              : null;
+          await this.approvePolicy(tx, withdrawalId, input.correlationId, input.createdAt);
 
           return success({
             id: withdrawalId,
@@ -129,9 +328,9 @@ export class PrismaWithdrawalRepository implements WithdrawalRepository {
             totalDebitAtomic: quote.totaldebit,
             assetDecimals: quote.assetdecimals,
             externalTxId,
-            status: policyApproved ? 'POLICY_APPROVED' : 'CREATED',
+            status: 'POLICY_APPROVED',
             createdAt: input.createdAt,
-            ...(policyApproved ? { policyApprovedAt: input.createdAt } : {}),
+            policyApprovedAt: input.createdAt,
           });
         },
         {
@@ -167,6 +366,15 @@ export class PrismaWithdrawalRepository implements WithdrawalRepository {
       },
     });
     await tx.withdrawalSubmissionJob.create({ data: { withdrawalId, dueAt: now } });
+    await tx.outboxEvent.create({
+      data: {
+        aggregateType: 'withdrawal',
+        aggregateId: withdrawalId,
+        eventType: 'sle.withdrawal.policy_approved',
+        correlationId,
+        payload: { withdrawalId, status: 'POLICY_APPROVED' },
+      },
+    });
     return true;
   }
 
@@ -295,24 +503,35 @@ export class PrismaWithdrawalSubmissionJobRepository implements WithdrawalSubmis
       }
       const withdrawal = await tx.withdrawal.findUniqueOrThrow({
         where: { id: claim.withdrawalId },
-        include: { feeQuote: true },
+        include: { feeQuote: true, treasuryWallet: true },
       });
-      if (withdrawal.status !== 'CREATED' && withdrawal.status !== 'POLICY_APPROVED') return null;
-      await tx.withdrawal.update({ where: { id: withdrawal.id }, data: { status: 'SUBMITTING' } });
-      await tx.withdrawalTransition.create({
-        data: {
-          withdrawalId: withdrawal.id,
-          fromStatus: withdrawal.status,
-          toStatus: 'SUBMITTING',
-          reasonCode: 'WITHDRAWAL_SUBMISSION_STARTED',
-          correlationId,
-          occurredAt: now,
-        },
-      });
+      const firstAttempt =
+        withdrawal.status === 'CREATED' || withdrawal.status === 'POLICY_APPROVED';
+      const recovery =
+        withdrawal.status === 'SUBMITTING' || withdrawal.status === 'SUBMISSION_UNKNOWN';
+      if (!firstAttempt && !recovery) return null;
+      if (firstAttempt) {
+        await tx.withdrawal.update({
+          where: { id: withdrawal.id },
+          data: { status: 'SUBMITTING' },
+        });
+        await tx.withdrawalTransition.create({
+          data: {
+            withdrawalId: withdrawal.id,
+            fromStatus: withdrawal.status,
+            toStatus: 'SUBMITTING',
+            reasonCode: 'WITHDRAWAL_SUBMISSION_STARTED',
+            correlationId,
+            occurredAt: now,
+          },
+        });
+      }
       return {
+        operation: firstAttempt ? 'CREATE' : 'LOOKUP',
         withdrawalId: withdrawal.id,
         externalTxId: withdrawal.externalTxId,
-        assetNetworkId: withdrawal.assetNetworkId,
+        providerVaultId: withdrawal.treasuryWallet.providerVaultId,
+        providerAssetId: withdrawal.treasuryWallet.providerAssetId,
         destinationAddress: withdrawal.destinationAddress,
         principalAtomic: withdrawal.principalAtomic,
         assetDecimals: withdrawal.feeQuote.assetDecimals,
@@ -325,14 +544,38 @@ export class PrismaWithdrawalSubmissionJobRepository implements WithdrawalSubmis
     outcome:
       | { readonly kind: 'SUBMITTED'; readonly providerTransferId: string }
       | { readonly kind: 'FAILED_BEFORE_BROADCAST' }
-      | { readonly kind: 'SUBMISSION_UNKNOWN' },
+      | { readonly kind: 'SUBMISSION_UNKNOWN' }
+      | { readonly kind: 'RECONCILIATION_REQUIRED' },
     correlationId: string,
     now: Date,
   ): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
+      const job = await tx.withdrawalSubmissionJob.findFirst({
+        where: { id: claim.jobId, status: 'LEASED', leaseToken: claim.leaseToken },
+      });
+      if (!job) throw new Error('WITHDRAWAL_SUBMISSION_LEASE_LOST');
+
       const withdrawal = await tx.withdrawal.findUniqueOrThrow({
         where: { id: claim.withdrawalId },
       });
+      if (withdrawal.status !== 'SUBMITTING' && withdrawal.status !== 'SUBMISSION_UNKNOWN') {
+        throw new Error('WITHDRAWAL_SUBMISSION_STATE_CHANGED');
+      }
+
+      if (outcome.kind === 'SUBMISSION_UNKNOWN' && withdrawal.status === 'SUBMISSION_UNKNOWN') {
+        await tx.withdrawalSubmissionJob.update({
+          where: { id: claim.jobId },
+          data: {
+            status: 'PENDING',
+            leaseToken: null,
+            leaseExpiresAt: null,
+            dueAt: new Date(now.getTime() + 10_000),
+            lastErrorCode: 'PROVIDER_RESULT_UNKNOWN',
+          },
+        });
+        return;
+      }
+
       const toStatus = outcome.kind;
       await tx.withdrawal.update({
         where: { id: claim.withdrawalId },
@@ -342,6 +585,7 @@ export class PrismaWithdrawalSubmissionJobRepository implements WithdrawalSubmis
             ? { submittedAt: now, providerTransferId: outcome.providerTransferId }
             : {}),
           ...(outcome.kind === 'FAILED_BEFORE_BROADCAST' ? { failedBeforeBroadcastAt: now } : {}),
+          ...(outcome.kind === 'RECONCILIATION_REQUIRED' ? { reconciliationRequiredAt: now } : {}),
         },
       });
       await tx.withdrawalTransition.create({
@@ -349,7 +593,7 @@ export class PrismaWithdrawalSubmissionJobRepository implements WithdrawalSubmis
           withdrawalId: claim.withdrawalId,
           fromStatus: withdrawal.status,
           toStatus,
-          reasonCode: `WITHDRAWAL_${toStatus}`,
+          reasonCode: 'WITHDRAWAL_' + toStatus,
           correlationId,
           occurredAt: now,
         },
@@ -359,7 +603,9 @@ export class PrismaWithdrawalSubmissionJobRepository implements WithdrawalSubmis
           ? 'sle.withdrawal.submitted'
           : outcome.kind === 'FAILED_BEFORE_BROADCAST'
             ? 'sle.withdrawal.failed_before_broadcast'
-            : 'sle.withdrawal.reconciliation_required';
+            : outcome.kind === 'SUBMISSION_UNKNOWN'
+              ? 'sle.withdrawal.submission_unknown'
+              : 'sle.withdrawal.reconciliation_required';
       await tx.outboxEvent.create({
         data: {
           aggregateType: 'withdrawal',
@@ -369,8 +615,8 @@ export class PrismaWithdrawalSubmissionJobRepository implements WithdrawalSubmis
           payload: { withdrawalId: claim.withdrawalId, status: toStatus },
         },
       });
-      const result = await tx.withdrawalSubmissionJob.updateMany({
-        where: { id: claim.jobId, status: 'LEASED', leaseToken: claim.leaseToken },
+      await tx.withdrawalSubmissionJob.update({
+        where: { id: claim.jobId },
         data:
           outcome.kind === 'SUBMISSION_UNKNOWN'
             ? {
@@ -378,71 +624,18 @@ export class PrismaWithdrawalSubmissionJobRepository implements WithdrawalSubmis
                 leaseToken: null,
                 leaseExpiresAt: null,
                 dueAt: new Date(now.getTime() + 10_000),
+                lastErrorCode: 'PROVIDER_RESULT_UNKNOWN',
               }
-            : { status: 'COMPLETED', leaseToken: null, leaseExpiresAt: null },
-      });
-      if (result.count !== 1) throw new Error('WITHDRAWAL_SUBMISSION_LEASE_LOST');
-    });
-  }
-
-  async listDueRecovery(
-    now: Date,
-    limit: number,
-  ): Promise<readonly { readonly withdrawalId: string; readonly externalTxId: string }[]> {
-    const withdrawals = await this.prisma.withdrawal.findMany({
-      where: { status: 'SUBMISSION_UNKNOWN' },
-      orderBy: { updatedAt: 'asc' },
-      take: limit,
-      select: { id: true, externalTxId: true },
-    });
-    return withdrawals.map((w) => ({ withdrawalId: w.id, externalTxId: w.externalTxId }));
-  }
-
-  async resolveUnknown(
-    withdrawalId: string,
-    outcome:
-      | { readonly kind: 'SUBMITTED'; readonly providerTransferId: string }
-      | { readonly kind: 'FAILED_BEFORE_BROADCAST' },
-    correlationId: string,
-    now: Date,
-  ): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
-      const result = await tx.withdrawal.updateMany({
-        where: { id: withdrawalId, status: 'SUBMISSION_UNKNOWN' },
-        data: {
-          status: outcome.kind,
-          ...(outcome.kind === 'SUBMITTED'
-            ? { submittedAt: now, providerTransferId: outcome.providerTransferId }
-            : { failedBeforeBroadcastAt: now }),
-        },
-      });
-      if (result.count !== 1) return;
-      await tx.withdrawalTransition.create({
-        data: {
-          withdrawalId,
-          fromStatus: 'SUBMISSION_UNKNOWN',
-          toStatus: outcome.kind,
-          reasonCode: `WITHDRAWAL_RECOVERY_${outcome.kind}`,
-          correlationId,
-          occurredAt: now,
-        },
-      });
-      await tx.outboxEvent.create({
-        data: {
-          aggregateType: 'withdrawal',
-          aggregateId: withdrawalId,
-          eventType:
-            outcome.kind === 'SUBMITTED'
-              ? 'sle.withdrawal.submitted'
-              : 'sle.withdrawal.failed_before_broadcast',
-          correlationId,
-          payload: { withdrawalId, status: outcome.kind },
-        },
+            : {
+                status: 'COMPLETED',
+                leaseToken: null,
+                leaseExpiresAt: null,
+                lastErrorCode: null,
+              },
       });
     });
   }
 }
-
 function mapWithdrawal(
   w: Prisma.WithdrawalGetPayload<{ include: { feeQuote: true } }>,
 ): StoredWithdrawal {
@@ -468,6 +661,12 @@ function mapWithdrawal(
     ...(w.failedBeforeBroadcastAt ? { failedBeforeBroadcastAt: w.failedBeforeBroadcastAt } : {}),
     ...(w.reconciliationRequiredAt ? { reconciliationRequiredAt: w.reconciliationRequiredAt } : {}),
   };
+}
+function validDestinationAddress(addressFamily: string, address: string): boolean {
+  if (addressFamily === 'EVM') return /^0x[0-9a-fA-F]{40}$/.test(address);
+  // TEST exists only in isolated integration fixtures and is never a deployable route.
+  if (addressFamily === 'TEST') return /^0x[0-9A-Z]{8,64}$/.test(address);
+  return false;
 }
 function success<T>(value: T): { kind: 'SUCCESS'; value: T } {
   return { kind: 'SUCCESS', value };

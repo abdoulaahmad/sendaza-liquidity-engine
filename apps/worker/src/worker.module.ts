@@ -59,6 +59,7 @@ import {
 import { DeterministicFakeCustodyTransferProvider } from './fake-custody-transfer.provider';
 import { WithdrawalSubmissionWorker } from './withdrawal-submission.worker';
 import { WithdrawalRecoveryWorker } from './withdrawal-recovery.worker';
+import { FireblocksCustodyTransferProvider } from './fireblocks-custody-transfer.provider';
 
 @Module({
   imports: [DatabaseModule],
@@ -227,7 +228,24 @@ import { WithdrawalRecoveryWorker } from './withdrawal-recovery.worker';
     WithdrawalConfiguration,
     {
       provide: CustodyTransferProvider,
-      useValue: new DeterministicFakeCustodyTransferProvider(),
+      useFactory: (configuration: TreasurySyncConfiguration) => {
+        const provider = process.env.SLE_CUSTODY_TRANSFER_PROVIDER ?? 'DETERMINISTIC_FAKE';
+        if (provider === 'DETERMINISTIC_FAKE') {
+          return new DeterministicFakeCustodyTransferProvider();
+        }
+        if (provider !== 'FIREBLOCKS') {
+          throw new Error('SLE_CUSTODY_TRANSFER_PROVIDER_INVALID');
+        }
+        const credentials = configuration.fireblocksCredentials();
+        return new FireblocksCustodyTransferProvider(
+          credentials.apiKey,
+          credentials.privateKey,
+          credentials.baseUrl,
+          fetch,
+          configuration.providerTimeoutMs,
+        );
+      },
+      inject: [TreasurySyncConfiguration],
     },
     {
       provide: WithdrawalSubmissionBatchService,
@@ -251,7 +269,13 @@ import { WithdrawalRecoveryWorker } from './withdrawal-recovery.worker';
         jobs: WithdrawalSubmissionJobRepository,
         custody: CustodyTransferProvider,
         configuration: WithdrawalConfiguration,
-      ) => new WithdrawalRecoveryBatchService(jobs, custody, configuration.recoveryBatchSize),
+      ) =>
+        new WithdrawalRecoveryBatchService(
+          jobs,
+          custody,
+          configuration.recoveryBatchSize,
+          configuration.submissionLeaseSeconds,
+        ),
       inject: [WithdrawalSubmissionJobRepository, CustodyTransferProvider, WithdrawalConfiguration],
     },
     WithdrawalRecoveryWorker,

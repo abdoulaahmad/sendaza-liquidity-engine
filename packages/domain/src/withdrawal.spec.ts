@@ -95,7 +95,9 @@ describe('WithdrawalSubmissionBatchService', () => {
   const context = {
     withdrawalId: 'withdrawal-1',
     externalTxId: 'withdrawal-1',
-    assetNetworkId: 'asset-network-1',
+    operation: 'CREATE' as const,
+    providerVaultId: 'vault-1',
+    providerAssetId: 'ETH_TEST6',
     destinationAddress: '0xabc',
     principalAtomic: 1_000n,
     assetDecimals: 6,
@@ -103,14 +105,10 @@ describe('WithdrawalSubmissionBatchService', () => {
   const claimBatch = jest.fn();
   const beginSubmitting = jest.fn();
   const recordOutcome = jest.fn();
-  const listDueRecovery = jest.fn();
-  const resolveUnknown = jest.fn();
   const jobs: WithdrawalSubmissionJobRepository = {
     claimBatch,
     beginSubmitting,
     recordOutcome,
-    listDueRecovery,
-    resolveUnknown,
   };
   const createTransfer = jest.fn();
   const findTransferByExternalTxId = jest.fn();
@@ -131,7 +129,8 @@ describe('WithdrawalSubmissionBatchService', () => {
     expect(result).toEqual({ claimed: 1, submitted: 1, failed: 0, unknown: 0 });
     expect(createTransfer).toHaveBeenCalledWith({
       externalTxId: 'withdrawal-1',
-      assetNetworkId: 'asset-network-1',
+      providerVaultId: 'vault-1',
+      providerAssetId: 'ETH_TEST6',
       destinationAddress: '0xabc',
       amountAtomic: 1_000n,
       assetDecimals: 6,
@@ -144,19 +143,19 @@ describe('WithdrawalSubmissionBatchService', () => {
     );
   });
 
-  it('records FAILED_BEFORE_BROADCAST on a definite provider rejection', async () => {
+  it('routes a provider terminal failure to reconciliation', async () => {
     claimBatch.mockResolvedValue([
       { jobId: 'job-1', withdrawalId: 'withdrawal-1', leaseToken: 'lease-1' },
     ]);
     beginSubmitting.mockResolvedValue(context);
-    createTransfer.mockResolvedValue({ kind: 'REJECTED', reasonCode: 'INVALID_ADDRESS' });
+    createTransfer.mockResolvedValue({ kind: 'TERMINAL_FAILURE', reasonCode: 'FAILED' });
 
     const result = await service.processBatch(now, 'lease-token-1');
 
     expect(result).toEqual({ claimed: 1, submitted: 0, failed: 1, unknown: 0 });
     expect(recordOutcome).toHaveBeenCalledWith(
       expect.anything(),
-      { kind: 'FAILED_BEFORE_BROADCAST' },
+      { kind: 'RECONCILIATION_REQUIRED' },
       expect.any(String),
       now,
     );
@@ -196,28 +195,37 @@ describe('WithdrawalSubmissionBatchService', () => {
 
 describe('WithdrawalRecoveryBatchService', () => {
   const now = new Date('2026-09-03T15:05:00.000Z');
-  const listDueRecovery = jest.fn();
-  const resolveUnknown = jest.fn();
+  const claim = { jobId: 'job-1', withdrawalId: 'withdrawal-1', leaseToken: 'lease-1' };
+  const context = {
+    operation: 'LOOKUP' as const,
+    withdrawalId: 'withdrawal-1',
+    externalTxId: 'withdrawal-1',
+    providerVaultId: 'vault-1',
+    providerAssetId: 'ETH_TEST6',
+    destinationAddress: '0xabc',
+    principalAtomic: 1_000n,
+    assetDecimals: 6,
+  };
+  const claimBatch = jest.fn();
+  const beginSubmitting = jest.fn();
+  const recordOutcome = jest.fn();
   const jobs: WithdrawalSubmissionJobRepository = {
-    claimBatch: jest.fn(),
-    beginSubmitting: jest.fn(),
-    recordOutcome: jest.fn(),
-    listDueRecovery,
-    resolveUnknown,
+    claimBatch,
+    beginSubmitting,
+    recordOutcome,
   };
   const findTransferByExternalTxId = jest.fn();
   const custody: CustodyTransferProvider = {
     createTransfer: jest.fn(),
     findTransferByExternalTxId,
   };
-  const service = new WithdrawalRecoveryBatchService(jobs, custody, 10);
+  const service = new WithdrawalRecoveryBatchService(jobs, custody, 10, 30);
 
   beforeEach(() => jest.clearAllMocks());
 
-  it('recovers by externalTxId, never providerTransferId, and resolves SUBMITTED', async () => {
-    listDueRecovery.mockResolvedValue([
-      { withdrawalId: 'withdrawal-1', externalTxId: 'withdrawal-1' },
-    ]);
+  it('claims recovery work and resolves by externalTxId', async () => {
+    claimBatch.mockResolvedValue([claim]);
+    beginSubmitting.mockResolvedValue(context);
     findTransferByExternalTxId.mockResolvedValue({
       kind: 'ACCEPTED',
       providerTransferId: 'ftx-1',
@@ -226,8 +234,8 @@ describe('WithdrawalRecoveryBatchService', () => {
     const result = await service.processBatch(now);
 
     expect(findTransferByExternalTxId).toHaveBeenCalledWith('withdrawal-1');
-    expect(resolveUnknown).toHaveBeenCalledWith(
-      'withdrawal-1',
+    expect(recordOutcome).toHaveBeenCalledWith(
+      claim,
       { kind: 'SUBMITTED', providerTransferId: 'ftx-1' },
       expect.any(String),
       now,
@@ -240,32 +248,19 @@ describe('WithdrawalRecoveryBatchService', () => {
     });
   });
 
-  it('resolves FAILED_BEFORE_BROADCAST on a definite rejection', async () => {
-    listDueRecovery.mockResolvedValue([
-      { withdrawalId: 'withdrawal-1', externalTxId: 'withdrawal-1' },
-    ]);
-    findTransferByExternalTxId.mockResolvedValue({ kind: 'REJECTED', reasonCode: 'NOT_FOUND' });
-
-    const result = await service.processBatch(now);
-
-    expect(resolveUnknown).toHaveBeenCalledWith(
-      'withdrawal-1',
-      { kind: 'FAILED_BEFORE_BROADCAST' },
-      expect.any(String),
-      now,
-    );
-    expect(result.resolvedFailed).toBe(1);
-  });
-
-  it('leaves the withdrawal in SUBMISSION_UNKNOWN when the lookup is still ambiguous', async () => {
-    listDueRecovery.mockResolvedValue([
-      { withdrawalId: 'withdrawal-1', externalTxId: 'withdrawal-1' },
-    ]);
+  it('keeps an ambiguous lookup leased through the repository reschedule path', async () => {
+    claimBatch.mockResolvedValue([claim]);
+    beginSubmitting.mockResolvedValue(context);
     findTransferByExternalTxId.mockResolvedValue({ kind: 'UNKNOWN' });
 
     const result = await service.processBatch(now);
 
-    expect(resolveUnknown).not.toHaveBeenCalled();
+    expect(recordOutcome).toHaveBeenCalledWith(
+      claim,
+      { kind: 'SUBMISSION_UNKNOWN' },
+      expect.any(String),
+      now,
+    );
     expect(result.stillUnknown).toBe(1);
   });
 });

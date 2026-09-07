@@ -89,7 +89,12 @@ function mapped(error: unknown): HttpException {
   }
   if (error instanceof WithdrawalError) {
     const notFound = new Set(['WITHDRAWAL_NOT_FOUND', 'FEE_QUOTE_NOT_FOUND']);
-    const unavailable = new Set(['WITHDRAWAL_POLICY_UNAVAILABLE']);
+    const unavailable = new Set([
+      'WITHDRAWAL_POLICY_UNAVAILABLE',
+      'CUSTODY_ROUTE_UNAVAILABLE',
+      'NETWORK_FEE_EVIDENCE_UNAVAILABLE',
+      'TREASURY_EVIDENCE_UNAVAILABLE',
+    ]);
     const status = notFound.has(error.code) ? 404 : unavailable.has(error.code) ? 503 : 409;
     return new HttpException(
       {

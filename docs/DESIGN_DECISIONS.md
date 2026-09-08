@@ -294,3 +294,30 @@ selection and the available-balance check serialize on the selected wallet row
 so concurrent requests cannot approve against the same cached capacity.
 External compliance screening remains a production launch gate until an
 approved provider supplies persisted evidence.
+## ADR-015: Fireblocks Webhooks V2 Use Detached JWS and a Durable Inbox
+
+**Decision:** Accepted on 8 September 2026
+
+The SLE provider callback accepts Fireblocks Webhooks V2 transaction events only.
+It authenticates the exact raw body with the detached JWS carried by
+Fireblocks-Webhook-Signature. The protected header must use RS512, name a bounded
+key ID, and contain no unsupported critical extension. Public keys come only
+from the fixed Fireblocks JWKS host selected by the configured workspace region;
+callers cannot supply a key or URL. Keys are cached for at most one hour and an
+unknown key ID causes one refresh to support rotation.
+
+Signature verification happens before JSON parsing or financial persistence.
+The endpoint enforces JSON content type and a 100,000-byte maximum body. It
+accepts only the documented transaction events needed for finality, each with a
+valid provider event UUID and Fireblocks transaction ID. This callback bypasses
+Sendaza client HMAC and Idempotency-Key handling through a dedicated route marker,
+but it does not bypass provider authentication.
+
+After verification, SLE stores the exact raw body, SHA-256 payload hash, event
+metadata, signature key ID, receipt time, and optional withdrawal link in a
+durable inbox before returning success. Provider event ID is unique.
+Byte-identical redelivery is acknowledged without another effect; reuse of an
+event ID with different bytes is rejected as an integrity conflict. Inbox
+processing is asynchronous and leased. Merely ingesting a webhook cannot advance
+withdrawal state; webhook and polling evidence must use the shared finality
+transition path added by Sprint 9.

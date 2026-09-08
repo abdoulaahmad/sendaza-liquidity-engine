@@ -15,6 +15,7 @@ import {
   validateIdempotencyKey,
 } from '../../../packages/domain/src';
 import { IDEMPOTENT_OPERATION } from './idempotent-operation.decorator';
+import { PROVIDER_WEBHOOK_ROUTE } from './provider-webhook-route.decorator';
 
 type MutationRequest = {
   readonly method: string;
@@ -41,6 +42,14 @@ export class IdempotencyInterceptor implements NestInterceptor {
 
   async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<unknown>> {
     const request = context.switchToHttp().getRequest<MutationRequest>();
+    if (
+      this.reflector.getAllAndOverride<boolean>(PROVIDER_WEBHOOK_ROUTE, [
+        context.getHandler(),
+        context.getClass(),
+      ])
+    ) {
+      return next.handle();
+    }
     if (!MUTATION_METHODS.has(request.method.toUpperCase())) return next.handle();
 
     const operation = this.reflector.get<string>(IDEMPOTENT_OPERATION, context.getHandler());

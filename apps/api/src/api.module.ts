@@ -4,7 +4,10 @@ import { HealthController } from './health.controller';
 import { RegistryController } from './registry.controller';
 import { RegistryRepository, RegistryService } from '../../../packages/domain/src';
 import { DatabaseModule, PrismaRegistryRepository } from '../../../packages/database/src';
-import { CredentialSecretProvider } from '../../../packages/configuration/src';
+import {
+  CredentialSecretProvider,
+  FireblocksWebhookConfiguration,
+} from '../../../packages/configuration/src';
 import { AuthenticationGuard } from './authentication.guard';
 import { IdempotencyInterceptor } from './idempotency.interceptor';
 import { AuditInterceptor } from './audit.interceptor';
@@ -18,9 +21,16 @@ import { PurchaseController } from './purchase.controller';
 import { NetworkFeeRepository, WithdrawalFeeQuoteService } from '../../../packages/domain/src';
 import { PrismaNetworkFeeRepository } from '../../../packages/database/src';
 import { WithdrawalFeeQuoteController } from './withdrawal-fee-quote.controller';
-import { WithdrawalRepository, WithdrawalService } from '../../../packages/domain/src';
+import {
+  CustodyWebhookInboxRepository,
+  CustodyWebhookIngestionService,
+  WithdrawalRepository,
+  WithdrawalService,
+} from '../../../packages/domain/src';
 import { PrismaWithdrawalRepository } from '../../../packages/database/src';
 import { WithdrawalController } from './withdrawal.controller';
+import { FireblocksWebhookController } from './fireblocks-webhook.controller';
+import { FireblocksWebhookVerifier } from './fireblocks-webhook.verifier';
 
 @Module({
   imports: [DatabaseModule],
@@ -31,6 +41,7 @@ import { WithdrawalController } from './withdrawal.controller';
     PurchaseController,
     WithdrawalFeeQuoteController,
     WithdrawalController,
+    FireblocksWebhookController,
   ],
   providers: [
     RegistryService,
@@ -38,6 +49,21 @@ import { WithdrawalController } from './withdrawal.controller';
     PurchaseConfiguration,
     WithdrawalFeeQuoteService,
     WithdrawalService,
+    FireblocksWebhookConfiguration,
+    FireblocksWebhookVerifier,
+    {
+      provide: CustodyWebhookIngestionService,
+      useFactory: (
+        verifier: FireblocksWebhookVerifier,
+        inbox: CustodyWebhookInboxRepository,
+        configuration: FireblocksWebhookConfiguration,
+      ) => new CustodyWebhookIngestionService(verifier, inbox, configuration.maximumBodyBytes),
+      inject: [
+        FireblocksWebhookVerifier,
+        CustodyWebhookInboxRepository,
+        FireblocksWebhookConfiguration,
+      ],
+    },
     {
       provide: PurchaseService,
       useFactory: (repository: PurchaseRepository, configuration: PurchaseConfiguration) =>

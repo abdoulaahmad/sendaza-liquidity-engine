@@ -5,3 +5,4 @@ export * from './treasury-sync.configuration';
 export * from './purchase.configuration';
 export * from './network-fee.configuration';
 export * from './withdrawal.configuration';
+export * from './fireblocks-webhook.configuration';

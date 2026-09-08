@@ -13,3 +13,4 @@ export * from './treasury';
 export * from './purchase';
 export * from './network-fee';
 export * from './withdrawal';
+export * from './withdrawal-webhook';

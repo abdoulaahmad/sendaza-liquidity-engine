@@ -317,6 +317,15 @@ returns success after confirming the existing inbox row and never reapplies the
 financial transition. Business processing runs from a leased inbox job and is
 safe after a crash or retry.
 
+### Implemented Webhook Ingestion Boundary
+
+The first Sprint 9 webhook increment implements the V2 detached-JWS verifier,
+fixed environment-specific Fireblocks JWKS selection, bounded cache and refresh,
+strict transaction-event parsing, exact-body durable inbox, payload-hash conflict
+check, and the provider-specific API route. It does not yet process inbox rows or
+advance withdrawal finality; those remain pending with the shared processing and
+polling service.
+
 ## Provider Polling and Evidence
 
 A bounded worker polls every due post-submission withdrawal. It obtains the

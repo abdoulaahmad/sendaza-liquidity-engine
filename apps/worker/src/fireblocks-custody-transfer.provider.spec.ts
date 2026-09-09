@@ -79,4 +79,44 @@ describe('FireblocksCustodyTransferProvider', () => {
       reasonCode: 'FAILED',
     });
   });
+
+  it('polls detailed provider finality and preserves replacement identifiers', async () => {
+    const observedAt = new Date('2026-09-09T08:00:00.000Z');
+    const fetcher = jest.fn(async (input: string | URL | Request) => {
+      expect(String(input)).toBe('https://sandbox-api.fireblocks.io/v1/transactions/fireblocks-id');
+      return new Response(
+        JSON.stringify({
+          id: 'fireblocks-id',
+          externalTxId: 'replacement-external-id',
+          status: 'CONFIRMING',
+          txHash: '0xnew',
+          replacedTxHash: '0xold',
+          numOfConfirmations: 2,
+          blockInfo: { blockHeight: '100', blockHash: '0xblock' },
+        }),
+        { status: 200 },
+      );
+    });
+    const provider = new FireblocksCustodyTransferProvider(
+      'api-key',
+      privatePem,
+      'https://sandbox-api.fireblocks.io',
+      fetcher as typeof fetch,
+      5000,
+      () => observedAt,
+    );
+
+    await expect(provider.getTransfer('fireblocks-id')).resolves.toEqual({
+      source: 'FIREBLOCKS_POLL',
+      providerStatus: 'CONFIRMING',
+      providerTransferId: 'fireblocks-id',
+      externalTxId: 'replacement-external-id',
+      replacedTxHash: '0xold',
+      txHash: '0xnew',
+      blockHash: '0xblock',
+      blockNumber: 100n,
+      confirmationCount: 2,
+      observedAt,
+    });
+  });
 });

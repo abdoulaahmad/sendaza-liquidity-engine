@@ -51,15 +51,25 @@ import {
 import { NetworkFeeRefreshWorker } from './network-fee-refresh.worker';
 import { WithdrawalConfiguration } from '../../../packages/configuration/src';
 import {
+  ChainFinalityProvider,
+  CustodyFinalityProvider,
   CustodyTransferProvider,
+  CustodyWebhookEventNormalizer,
   WithdrawalRecoveryBatchService,
   WithdrawalSubmissionBatchService,
   WithdrawalSubmissionJobRepository,
+  WithdrawalFinalityRepository,
+  WithdrawalPollingFinalityBatchService,
+  WithdrawalWebhookFinalityBatchService,
 } from '../../../packages/domain/src';
 import { DeterministicFakeCustodyTransferProvider } from './fake-custody-transfer.provider';
 import { WithdrawalSubmissionWorker } from './withdrawal-submission.worker';
 import { WithdrawalRecoveryWorker } from './withdrawal-recovery.worker';
 import { FireblocksCustodyTransferProvider } from './fireblocks-custody-transfer.provider';
+import { FireblocksWebhookEventNormalizer } from './fireblocks-webhook-event.normalizer';
+import { EvmChainFinalityProvider } from './evm-chain-finality.provider';
+import { WithdrawalWebhookFinalityWorker } from './withdrawal-webhook-finality.worker';
+import { WithdrawalFinalityWorker } from './withdrawal-finality.worker';
 
 @Module({
   imports: [DatabaseModule],
@@ -279,6 +289,62 @@ import { FireblocksCustodyTransferProvider } from './fireblocks-custody-transfer
       inject: [WithdrawalSubmissionJobRepository, CustodyTransferProvider, WithdrawalConfiguration],
     },
     WithdrawalRecoveryWorker,
+    { provide: CustodyFinalityProvider, useExisting: CustodyTransferProvider },
+    { provide: CustodyWebhookEventNormalizer, useClass: FireblocksWebhookEventNormalizer },
+    {
+      provide: ChainFinalityProvider,
+      useFactory: (configuration: TreasurySyncConfiguration) =>
+        new EvmChainFinalityProvider(
+          configuration.chainRpcUrls(),
+          fetch,
+          configuration.providerTimeoutMs,
+        ),
+      inject: [TreasurySyncConfiguration],
+    },
+    {
+      provide: WithdrawalWebhookFinalityBatchService,
+      useFactory: (
+        repository: WithdrawalFinalityRepository,
+        normalizer: CustodyWebhookEventNormalizer,
+        configuration: WithdrawalConfiguration,
+      ) =>
+        new WithdrawalWebhookFinalityBatchService(
+          repository,
+          normalizer,
+          configuration.webhookBatchSize,
+          configuration.finalityLeaseSeconds,
+        ),
+      inject: [
+        WithdrawalFinalityRepository,
+        CustodyWebhookEventNormalizer,
+        WithdrawalConfiguration,
+      ],
+    },
+    WithdrawalWebhookFinalityWorker,
+    {
+      provide: WithdrawalPollingFinalityBatchService,
+      useFactory: (
+        repository: WithdrawalFinalityRepository,
+        custody: CustodyFinalityProvider,
+        chains: ChainFinalityProvider,
+        configuration: WithdrawalConfiguration,
+      ) =>
+        new WithdrawalPollingFinalityBatchService(
+          repository,
+          custody,
+          chains,
+          configuration.finalityBatchSize,
+          configuration.finalityLeaseSeconds,
+          configuration.finalityRecheckSeconds,
+        ),
+      inject: [
+        WithdrawalFinalityRepository,
+        CustodyFinalityProvider,
+        ChainFinalityProvider,
+        WithdrawalConfiguration,
+      ],
+    },
+    WithdrawalFinalityWorker,
   ],
 })
 export class WorkerModule {}

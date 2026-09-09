@@ -1,4 +1,4 @@
-﻿import {
+import {
   CustodyWebhookClaim,
   CustodyWebhookEventNormalizer,
   WithdrawalFinalityEvidence,
@@ -17,6 +17,9 @@ export class FireblocksWebhookEventNormalizer implements CustodyWebhookEventNorm
     const status = text(data.status, 100);
     if (!status) throw new FireblocksFinalityPayloadError();
 
+    const providerTransferId = text(data.id, 150);
+    const externalTxId = text(data.externalTxId, 150);
+    const replacedTxHash = text(data.replacedTxHash, 255);
     const txHash =
       text(data.txHash, 255) ??
       (record(data.blockInfo) ? text(data.blockInfo.txHash, 255) : undefined);
@@ -32,6 +35,9 @@ export class FireblocksWebhookEventNormalizer implements CustodyWebhookEventNorm
       source: 'FIREBLOCKS_WEBHOOK',
       providerEventId: claim.providerEventId,
       providerStatus: status,
+      ...(providerTransferId ? { providerTransferId } : {}),
+      ...(externalTxId ? { externalTxId } : {}),
+      ...(replacedTxHash ? { replacedTxHash } : {}),
       ...(txHash ? { txHash } : {}),
       ...(blockHash ? { blockHash } : {}),
       ...(blockNumber === undefined ? {} : { blockNumber }),

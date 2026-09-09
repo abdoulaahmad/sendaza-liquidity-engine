@@ -1,4 +1,4 @@
-﻿import { FireblocksWebhookEventNormalizer } from './fireblocks-webhook-event.normalizer';
+import { FireblocksWebhookEventNormalizer } from './fireblocks-webhook-event.normalizer';
 
 describe('FireblocksWebhookEventNormalizer', () => {
   const normalizer = new FireblocksWebhookEventNormalizer();
@@ -29,6 +29,7 @@ describe('FireblocksWebhookEventNormalizer', () => {
       source: 'FIREBLOCKS_WEBHOOK',
       providerEventId: 'event-1',
       providerStatus: 'CONFIRMING',
+      providerTransferId: 'transfer-1',
       txHash: '0xabc',
       blockHash: '0xblock',
       blockNumber: 9007199254740993n,

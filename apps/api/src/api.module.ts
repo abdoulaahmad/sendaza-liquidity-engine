@@ -45,7 +45,11 @@ import { FireblocksWebhookVerifier } from './fireblocks-webhook.verifier';
   ],
   providers: [
     RegistryService,
-    QuoteService,
+    {
+      provide: QuoteService,
+      useFactory: (repository: QuoteRepository) => new QuoteService(repository),
+      inject: [QuoteRepository],
+    },
     PurchaseConfiguration,
     WithdrawalFeeQuoteService,
     WithdrawalService,

@@ -227,6 +227,10 @@ submission permits immediate release.
 
 ## Sprint 9: Webhooks and Blockchain Finality
 
+**Status:** Implementation delivered on 9 September 2026. Local schema,
+typecheck, lint, unit, and build gates pass. Real PostgreSQL execution and the
+Fireblocks/EVM testnet demonstration remain pending environment evidence.
+
 **Outcome:** SLE tracks withdrawal broadcast, replacement, and confirmations and
 delivers signed lifecycle events to Sendaza.
 

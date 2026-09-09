@@ -321,3 +321,22 @@ event ID with different bytes is rejected as an integrity conflict. Inbox
 processing is asynchronous and leased. Merely ingesting a webhook cannot advance
 withdrawal state; webhook and polling evidence must use the shared finality
 transition path added by Sprint 9.
+
+## ADR-016: Independent Finality Is Match-Based and Fail-Closed
+
+**Decision:** Accepted on 9 September 2026
+
+For a treasury wallet with verificationRequired enabled, Fireblocks status is a
+low-latency custody signal but cannot produce CONFIRMED. A read-only,
+network-specific adapter must match successful execution, configured network,
+asset or token contract, destination, exact atomic principal, and the network's
+required confirmation count. Any positive mismatch enters
+RECONCILIATION_REQUIRED. A reverted receipt may enter FAILED_ON_CHAIN, but
+missing or dropped transactions remain uncertain.
+
+Fireblocks replacedTxHash links an EVM RBF attempt to its predecessor. SLE keeps
+both attempts and all hashes, requires complete new provider/external/hash
+identifiers, and never lets delayed evidence for an old attempt become current.
+Evidence arriving after CONFIRMED cannot rewrite final history; it emits
+sle.withdrawal.post_finality_conflict for the later compensating reconciliation
+workflow.

@@ -1,0 +1,92 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SLE Sprint 9 Report</title>
+  <link rel="stylesheet" href="report.css">
+</head>
+<body><main>
+<p class="eyebrow">Sendaza Liquidity Engine</p>
+<h1>Sprint 9: Webhooks and Blockchain Finality</h1>
+<p class="subtitle">From Fireblocks submission to independently verified blockchain outcome</p>
+<p class="progress">Implementation delivered. Local code gates pass; PostgreSQL and live testnet environment gates remain pending.</p>
+<div class="note"><strong>Honest status:</strong> Webhook authentication and storage, leased processing, Fireblocks recovery polling, EVM receipt verification, immutable evidence, replacement tracking, and Sendaza lifecycle events are implemented. Prisma validation, typecheck, lint, 56 unit suites with 321 tests, and API/worker compilation pass. The isolated PostgreSQL runner is Windows-compatible, but the local PostgreSQL account rejected the available credentials. Railway verification was previously deferred, so the database gate and live Fireblocks/EVM demonstration are not claimed as passed.</div>
+
+<h2>Connection to Earlier Sprints</h2>
+<p>Sprint 7 calculated a network-scoped withdrawal fee. Sprint 8 validated policy, selected a server-owned Fireblocks wallet, persisted the withdrawal, and submitted it at most once. Sprint 9 starts after Fireblocks accepts that request. It answers the next questions: Was it broadcast? Which hash is current? Did the chain execute the correct transfer? Has it reached enough confirmations?</p>
+
+<h2>What Was Built</h2>
+<ul>
+<li><code>fireblocks-webhook.controller.ts</code> and <code>fireblocks-webhook.verifier.ts</code> authenticate Fireblocks Webhooks V2 over the exact raw body with RS512.</li>
+<li><code>prisma-custody-webhook-inbox.repository.ts</code> stores verified events before acknowledgement and deduplicates provider event IDs.</li>
+<li><code>withdrawal-finality.ts</code> defines one evidence and processing contract shared by webhooks and polling.</li>
+<li><code>prisma-withdrawal-finality.repository.ts</code> claims work with leases, appends evidence, advances state, and writes the outbox event atomically.</li>
+<li><code>fireblocks-custody-transfer.provider.ts</code> polls a transfer by Fireblocks ID when a webhook is missing.</li>
+<li><code>evm-chain-finality.provider.ts</code> independently checks the receipt, network route, token/native asset, destination, exact atomic amount, execution result, and confirmations.</li>
+<li>Migration <code>20260907193000_withdrawal_webhooks_finality</code> introduced inbox, attempt, hash, observation, and polling-job tables. Migration <code>20260908160000_finality_match_evidence</code> added explicit chain-match evidence.</li>
+</ul>
+
+<h2>End-to-End Example</h2>
+<pre class="flow">Sendaza lock remains held
+        |
+Sprint 8: SLE submits withdrawal once to Fireblocks
+        |
+        v
+SUBMITTED
+   |       Fireblocks webhook arrives
+   |       verify RS512 -> store exact bytes -> return 202
+   |                         |
+   +------ recovery poll ----+
+                             v
+               append provider observation + tx hash
+                             |
+               BROADCASTED -> CONFIRMING
+                             |
+                  read-only EVM RPC check
+      execution + network + asset + address + amount
+                     + required confirmations
+                             |
+                    all match? ---- no ----> RECONCILIATION_REQUIRED
+                             |
+                            yes
+                             v
+                         CONFIRMED
+                             |
+            state + signed Sendaza outbox event commit together</pre>
+<p>Example: a configured USDT-on-Ethereum withdrawal is checked against that exact token contract and Ethereum route. USDT on Tron would require a separate Tron adapter and cannot reuse Ethereum evidence.</p>
+
+<h2>Replacement Flow</h2>
+<p>For an EVM replace-by-fee transaction, Fireblocks supplies <code>replacedTxHash</code>. SLE links it to the current attempt, keeps the original attempt and hash immutable, and creates a new current attempt only when the new provider ID, external transaction ID, new hash, and old hash are complete. Delayed events for the old attempt remain evidence but cannot become authoritative again. Incomplete or conflicting replacement evidence enters reconciliation.</p>
+
+<h2>System Boundary</h2>
+<p>Sendaza still owns customer authentication, the crypto and fee lock, ledger posting, customer history, and the customer interface. SLE owns custody evidence, blockchain evidence, and withdrawal state. Fireblocks holds MPC signing shares; SLE never receives a treasury private key. The RPC adapter is read-only and cannot sign or move funds.</p>
+
+<h2>Rules Protected</h2>
+<ul>
+<li>A provider timeout or missing webhook is uncertainty, not failure.</li>
+<li>Fireblocks <code>COMPLETED</code> is not confirmation when independent verification is required.</li>
+<li>A broadcast transaction is never treated as final settlement.</li>
+<li>Chain confirmation requires positive execution, network, asset, destination, amount, and threshold matches.</li>
+<li>Post-submission provider failure never automatically releases the Sendaza lock.</li>
+<li>Events, transaction attempts, hashes, and observations are immutable or append-only.</li>
+<li>State transition and outbound Sendaza event commit in one PostgreSQL transaction.</li>
+<li>Workers use bounded leases and <code>FOR UPDATE SKIP LOCKED</code>, so a crash can be retried safely.</li>
+<li>Post-confirmation conflicting evidence emits an incident event and does not rewrite completed history.</li>
+</ul>
+
+<h2>Test and Environment Evidence</h2>
+<p>Local evidence on 9 September 2026: Prisma schema validation passed; TypeScript passed; ESLint passed; all 56 unit suites and 321 tests passed. Focused tests cover detached signatures, key rotation, duplicate inbox events, payload normalization, provider polling, exact bigint block data, confirmation thresholds, mismatches, reverted execution, RPC failure, and worker retry behavior. Both Nest builds compiled successfully; Windows emitted the already-known post-compilation <code>spawn EPERM</code> messages.</p>
+<p>The per-suite integration runner was corrected to invoke Jest through <code>process.execPath</code>, so it now starts correctly on Windows. Four PostgreSQL suites then reached the local server but failed authentication because the available <code>sle</code> credentials were not valid. No database reset or production migration was attempted. The new withdrawal integration cases are present but need valid <code>TEST_DATABASE_URL</code> credentials.</p>
+
+<h2>Limitations, Risks, and Next Dependency</h2>
+<p>The implemented independent adapter supports EVM native and ERC-20-style transfers. Other network families need their own tested adapters. A live Fireblocks sandbox transaction, webhook delivery, EVM receipt, signed Sendaza delivery, and restart demonstration remain environment work. Migration 15 and the match-evidence migration have not been applied to Railway in this sprint. Sprint 10 can integrate Sendaza's durable inbound event handling after these environment gates pass; Sprint 11 owns the full compensating reconciliation workflow for post-finality incidents.</p>
+
+<h2>Glossary</h2>
+<p><strong>Finality:</strong> confidence that a blockchain transaction will not be reversed. <strong>Receipt:</strong> chain evidence showing whether an EVM transaction executed and which block contains it. <strong>Confirmation:</strong> a block added after or including the transaction block. <strong>RBF:</strong> replace by fee, where a stuck EVM transaction is replaced using the same nonce and a higher fee. <strong>Webhook:</strong> a provider callback. <strong>Polling:</strong> SLE asking the provider periodically when callbacks are absent. <strong>Lease:</strong> a time-limited database claim that another worker may recover after expiry. <strong>Outbox:</strong> committed events waiting for reliable delivery to Sendaza.</p>
+
+<footer>Sprint 9 handover report. Canonical behavior lives in ADR-015, ADR-016, API_SPEC.md, ARCHITECTURE.md, SECURITY_OPERATIONS.md, and modules/withdrawal-engine/MODULE.md.</footer>
+</main></body>
+</html>
+

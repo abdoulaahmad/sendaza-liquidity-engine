@@ -6,9 +6,7 @@ The Withdrawal Engine consumes an unexpired Sprint 7 withdrawal fee quote,
 evaluates withdrawal policy, and submits an external blockchain transfer
 through Fireblocks MPC custody. Sprint 8 stops at safe submission, lookup-based
 timeout recovery, rejection, and the unresolved `SUBMISSION_UNKNOWN` state.
-Transaction replacement, webhook processing, independent confirmation
-verification, and on-chain finality are Sprint 9 scope and are not implemented
-here.
+Sprint 9 extends this module with authenticated webhook ingestion, leased processing, Fireblocks polling recovery, immutable replacement and hash evidence, and independent EVM finality.
 
 SLE never locks, debits, credits, or edits a Sendaza customer balance. Sendaza
 is the sole customer ledger system of record. A withdrawal creates a real
@@ -63,7 +61,7 @@ Any uncertain state     -> RECONCILIATION_REQUIRED
 ```
 
 `BROADCASTED` and beyond (`CONFIRMING`, `CONFIRMED`, `REPLACED`,
-`FAILED_ON_CHAIN`) are defined in `docs/ARCHITECTURE.md` §5 and remain that
+`FAILED_ON_CHAIN`) are defined in `docs/ARCHITECTURE.md` Ãƒâ€šÃ‚Â§5 and remain that
 diagram's authority; Sprint 8 only reaches `SUBMITTED`/`SUBMISSION_UNKNOWN` and
 records `provider_transfer_id` when Fireblocks returns one, but does not track
 broadcast or confirmation. Sprint 9 picks up from `SUBMITTED` onward.
@@ -238,20 +236,18 @@ a screening result.
 
 ## Status and Dependency
 
-This is a specification for Sprint 9, not a claim that the behavior is already
-implemented. It is based on the corrected Sprint 8 implementation in commit
+Sprint 9 implementation is delivered on its feature branch. Production activation
+still requires the environment gates recorded below. It is based on the corrected Sprint 8 implementation in commit
 9c10bcf (merged via #13), further hardened in commit 3bb7b56 (custody routing
 and policy gates). Sprint 9 starts with a withdrawal in SUBMITTED and a stored
 Fireblocks transfer identifier. It must not weaken Sprint 8 wallet binding,
 policy gates, leased recovery, or uncertain-outcome rules.
 
-Sprint 9 is not ready for production until its forward migration, webhook
-receiver, reconciliation workers, provider and chain adapters, tests, and
-operational controls are implemented and verified against real PostgreSQL.
+The Sprint 9 implementation is present. Production activation remains blocked until the forward migrations and PostgreSQL integration scenarios pass in an approved environment and the Fireblocks/EVM testnet demonstration is recorded.
 
 ## Scope
 
-Sprint 9 will:
+Sprint 9 implements:
 
 - authenticate, persist, deduplicate, and asynchronously process Fireblocks
   Webhooks V2 events;
@@ -319,12 +315,12 @@ safe after a crash or retry.
 
 ### Implemented Webhook Ingestion Boundary
 
-The first Sprint 9 webhook increment implements the V2 detached-JWS verifier,
-fixed environment-specific Fireblocks JWKS selection, bounded cache and refresh,
-strict transaction-event parsing, exact-body durable inbox, payload-hash conflict
-check, and the provider-specific API route. It does not yet process inbox rows or
-advance withdrawal finality; those remain pending with the shared processing and
-polling service.
+Sprint 9 implements the V2 detached-JWS verifier, fixed environment-specific
+Fireblocks JWKS selection, bounded cache and refresh, strict transaction-event
+parsing, exact-body durable inbox, payload-hash conflict check, leased inbox
+processing, shared transition repository, polling recovery, and independent EVM
+receipt verification. A provider event alone cannot confirm a verification-
+required route.
 
 ## Provider Polling and Evidence
 
@@ -435,3 +431,18 @@ Automatic customer lock release or ledger correction after FAILED_ON_CHAIN, and
 compensating action after a post-finality reorganization, remain owned by the
 later reconciliation gate. Sprint 9 records trustworthy evidence and escalates;
 it does not invent settlement authority.
+## Implementation and Release Evidence (9 September 2026)
+
+The API trust boundary, persistence models, forward migrations, leased webhook
+and polling workers, Fireblocks polling adapter, EVM receipt adapter, immutable
+attempt/hash/observation history, replacement linking, transition/outbox
+transaction, and focused tests are implemented.
+
+Local Prisma validation, TypeScript, lint, all 56 unit suites (321 tests), and API
+and worker compilation pass. The isolated integration runner was corrected to
+invoke Jest through Node on Windows. Its database suites reached the local
+PostgreSQL server but could not authenticate because this workspace has no valid
+TEST_DATABASE_URL credentials. The previously approved Railway test run remains
+deferred. Therefore implementation is delivered, but the Sprint 9 environment
+gate and testnet demonstration remain pending and must not be represented as
+passed.

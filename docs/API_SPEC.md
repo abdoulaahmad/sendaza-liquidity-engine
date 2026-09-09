@@ -260,10 +260,19 @@ shapes are rejected before financial persistence.
 A verified event is stored before the endpoint returns 202. provider event ID is
 unique; byte-identical redelivery returns 202 with duplicate true. Reuse of the
 same event ID with a different payload hash fails and is treated as an incident.
-The inbox links to a withdrawal only when data.id matches a known immutable
-transaction attempt. Asynchronous leased processing and finality transitions
-are delivered in later Sprint 9 increments; ingestion alone never advances a
-withdrawal.
+The inbox links directly when data.id matches a known immutable transaction
+attempt. A replacement event may instead link through replacedTxHash, but it
+cannot displace the current attempt unless the replacement provider ID,
+external transaction ID, new hash, and original hash all agree.
+
+A leased worker processes the durable inbox with FOR UPDATE SKIP LOCKED. The
+same finality repository handles webhook and polling evidence, appends the
+observation and hash history, and commits any withdrawal transition together
+with its Sendaza outbox event. Missing webhooks are recovered by polling
+Fireblocks by provider transaction ID. Provider COMPLETED is only CONFIRMING
+when the wallet requires independent verification. CONFIRMED requires a
+network adapter to match successful execution, network, asset, destination,
+exact atomic amount, and the configured confirmation threshold.
 
 ## 6. Sendaza Liability Snapshot API
 
@@ -340,7 +349,10 @@ sle.withdrawal.rejected
 sle.withdrawal.cancelled
 sle.withdrawal.submitted
 sle.withdrawal.broadcasted
+sle.withdrawal.replaced
 sle.withdrawal.confirmed
+sle.withdrawal.failed_on_chain
+sle.withdrawal.post_finality_conflict
 sle.withdrawal.failed_before_broadcast
 sle.withdrawal.reconciliation_required
 sle.liquidity.warning

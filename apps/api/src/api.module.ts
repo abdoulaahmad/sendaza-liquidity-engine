@@ -88,7 +88,7 @@ import { FireblocksWebhookVerifier } from './fireblocks-webhook.verifier';
         new PurchaseService(repository, configuration.reservationTtlSeconds),
       inject: [PurchaseRepository, PurchaseConfiguration],
     },
-    CredentialSecretProvider,
+    { provide: CredentialSecretProvider, useFactory: () => new CredentialSecretProvider() },
     { provide: APP_GUARD, useClass: AuthenticationGuard },
     { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
     { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },

@@ -34,15 +34,15 @@ if (suites.length === 0) {
   process.exit(0);
 }
 
-const jestBin = path.join(rootDir, 'node_modules', '.bin', 'jest');
+const jestBin = path.join(rootDir, 'node_modules', 'jest', 'bin', 'jest.js');
 let failures = 0;
 
 for (const suite of suites) {
   const relativePath = path.relative(rootDir, suite);
   console.log(`\n--- Running ${relativePath} (own process, timeout ${perSuiteTimeoutMs}ms) ---`);
   const result = spawnSync(
-    jestBin,
-    ['--config', 'jest.integration.config.cjs', '--runInBand', relativePath],
+    process.execPath,
+    [jestBin, '--config', 'jest.integration.config.cjs', '--runInBand', relativePath],
     {
       cwd: rootDir,
       stdio: 'inherit',

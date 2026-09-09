@@ -199,3 +199,18 @@ Required before launch:
 | Super administrator | Break-glass only; cannot bypass immutable audit or approval quorum |
 
 No single routine operator should be able to change a withdrawal destination and approve the same withdrawal.
+
+## Withdrawal Finality Operations
+
+Fireblocks Webhooks V2 are verified over exact raw bytes with RS512 before JSON
+parsing and stored durably before acknowledgement. Inbox and polling workers use
+bounded leases and PostgreSQL SKIP LOCKED claims. Alert on oldest pending inbox
+age, expired leases, polling backlog, repeated provider/RPC errors, replacement
+conflicts, and post-finality conflict events.
+
+A Fireblocks COMPLETED status is not enough for wallets with
+verificationRequired. The network adapter must positively match execution,
+network, asset or token contract, destination, exact atomic amount, and required
+confirmations. Provider failures after submission never authorize automatic
+Sendaza lock release. Missing, contradictory, or reordered evidence is retained
+and routed to reconciliation.

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+﻿import { Injectable } from '@nestjs/common';
 
 function integer(name: string, fallback: string, minimum: number, maximum: number): number {
   const raw = process.env[name] ?? fallback;
@@ -30,4 +30,25 @@ export class WithdrawalConfiguration {
     60_000,
   );
   readonly recoveryBatchSize = integer('SLE_WITHDRAWAL_RECOVERY_BATCH_SIZE', '10', 1, 100);
+  readonly webhookPollIntervalMs = integer(
+    'SLE_WITHDRAWAL_WEBHOOK_POLL_INTERVAL_MS',
+    '1000',
+    100,
+    60_000,
+  );
+  readonly webhookBatchSize = integer('SLE_WITHDRAWAL_WEBHOOK_BATCH_SIZE', '10', 1, 100);
+  readonly finalityPollIntervalMs = integer(
+    'SLE_WITHDRAWAL_FINALITY_POLL_INTERVAL_MS',
+    '5000',
+    100,
+    60_000,
+  );
+  readonly finalityBatchSize = integer('SLE_WITHDRAWAL_FINALITY_BATCH_SIZE', '10', 1, 100);
+  readonly finalityLeaseSeconds = integer('SLE_WITHDRAWAL_FINALITY_LEASE_SECONDS', '30', 1, 300);
+  readonly finalityRecheckSeconds = integer(
+    'SLE_WITHDRAWAL_FINALITY_RECHECK_SECONDS',
+    '15',
+    1,
+    3600,
+  );
 }

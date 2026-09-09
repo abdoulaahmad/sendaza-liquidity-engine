@@ -170,6 +170,11 @@ enum WithdrawalStatus {
   SUBMISSION_UNKNOWN
   FAILED_BEFORE_BROADCAST
   RECONCILIATION_REQUIRED
+  BROADCASTED
+  CONFIRMING
+  CONFIRMED
+  REPLACED
+  FAILED_ON_CHAIN
 }
 
 enum WithdrawalSubmissionJobStatus {
@@ -181,6 +186,34 @@ enum WithdrawalSubmissionJobStatus {
 enum WithdrawalPolicyStatus {
   ACTIVE
   RETIRED
+}
+
+enum CustodyWebhookStatus {
+  VERIFIED_PENDING
+  LEASED
+  PROCESSED
+}
+
+enum WithdrawalTransactionAttemptStatus {
+  SUBMITTED
+  BROADCASTED
+  CONFIRMING
+  REPLACED
+  CONFIRMED
+  FAILED_ON_CHAIN
+  RECONCILIATION_REQUIRED
+}
+
+enum WithdrawalEvidenceSource {
+  FIREBLOCKS_WEBHOOK
+  FIREBLOCKS_POLL
+  CHAIN_RPC
+}
+
+enum WithdrawalFinalityJobStatus {
+  PENDING
+  LEASED
+  COMPLETED
 }
 
 model Asset {
@@ -587,35 +620,44 @@ model WithdrawalPolicyVersion {
 }
 
 model Withdrawal {
-  id                       String                   @id @default(uuid()) @db.Uuid
-  feeQuoteId               String                   @unique @map("fee_quote_id") @db.Uuid
-  feeQuote                 WithdrawalFeeQuote       @relation(fields: [feeQuoteId], references: [id], onDelete: Restrict)
-  assetNetworkId           String                   @map("asset_network_id") @db.Uuid
-  assetNetwork             AssetNetwork             @relation(fields: [assetNetworkId], references: [id], onDelete: Restrict)
-  treasuryWalletId         String                   @map("treasury_wallet_id") @db.Uuid
-  treasuryWallet           TreasuryWallet           @relation("WithdrawalTreasuryWallet", fields: [treasuryWalletId], references: [id], onDelete: Restrict)
-  policyId                 String                   @map("policy_id") @db.Uuid
-  policy                   WithdrawalPolicyVersion  @relation(fields: [policyId], references: [id], onDelete: Restrict)
-  customerReference        String                   @map("customer_reference") @db.VarChar(100)
-  clientLockReference      String                   @unique @map("client_lock_reference") @db.VarChar(100)
-  clientReference          String                   @unique @map("client_reference") @db.VarChar(100)
-  destinationAddress       String                   @map("destination_address") @db.VarChar(255)
-  correlationId            String                   @map("correlation_id") @db.Uuid
-  principalAtomic          BigInt                   @map("principal_atomic")
-  totalDebitAtomic         BigInt                   @map("total_debit_atomic")
-  externalTxId             String                   @unique @map("external_tx_id") @db.Uuid
-  providerTransferId       String?                  @map("provider_transfer_id") @db.VarChar(100)
-  status                   WithdrawalStatus         @default(CREATED)
-  policyApprovedAt         DateTime?                @map("policy_approved_at") @db.Timestamptz(6)
-  cancelledAt              DateTime?                @map("cancelled_at") @db.Timestamptz(6)
-  rejectedAt               DateTime?                @map("rejected_at") @db.Timestamptz(6)
-  submittedAt              DateTime?                @map("submitted_at") @db.Timestamptz(6)
-  failedBeforeBroadcastAt  DateTime?                @map("failed_before_broadcast_at") @db.Timestamptz(6)
-  reconciliationRequiredAt DateTime?                @map("reconciliation_required_at") @db.Timestamptz(6)
-  createdAt                DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt                DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                       String                          @id @default(uuid()) @db.Uuid
+  feeQuoteId               String                          @unique @map("fee_quote_id") @db.Uuid
+  feeQuote                 WithdrawalFeeQuote              @relation(fields: [feeQuoteId], references: [id], onDelete: Restrict)
+  assetNetworkId           String                          @map("asset_network_id") @db.Uuid
+  assetNetwork             AssetNetwork                    @relation(fields: [assetNetworkId], references: [id], onDelete: Restrict)
+  treasuryWalletId         String                          @map("treasury_wallet_id") @db.Uuid
+  treasuryWallet           TreasuryWallet                  @relation("WithdrawalTreasuryWallet", fields: [treasuryWalletId], references: [id], onDelete: Restrict)
+  policyId                 String                          @map("policy_id") @db.Uuid
+  policy                   WithdrawalPolicyVersion         @relation(fields: [policyId], references: [id], onDelete: Restrict)
+  customerReference        String                          @map("customer_reference") @db.VarChar(100)
+  clientLockReference      String                          @unique @map("client_lock_reference") @db.VarChar(100)
+  clientReference          String                          @unique @map("client_reference") @db.VarChar(100)
+  destinationAddress       String                          @map("destination_address") @db.VarChar(255)
+  correlationId            String                          @map("correlation_id") @db.Uuid
+  principalAtomic          BigInt                          @map("principal_atomic")
+  totalDebitAtomic         BigInt                          @map("total_debit_atomic")
+  externalTxId             String                          @unique @map("external_tx_id") @db.Uuid
+  providerTransferId       String?                         @map("provider_transfer_id") @db.VarChar(100)
+  status                   WithdrawalStatus                @default(CREATED)
+  policyApprovedAt         DateTime?                       @map("policy_approved_at") @db.Timestamptz(6)
+  cancelledAt              DateTime?                       @map("cancelled_at") @db.Timestamptz(6)
+  rejectedAt               DateTime?                       @map("rejected_at") @db.Timestamptz(6)
+  submittedAt              DateTime?                       @map("submitted_at") @db.Timestamptz(6)
+  broadcastedAt            DateTime?                       @map("broadcasted_at") @db.Timestamptz(6)
+  confirmingAt             DateTime?                       @map("confirming_at") @db.Timestamptz(6)
+  confirmedAt              DateTime?                       @map("confirmed_at") @db.Timestamptz(6)
+  replacedAt               DateTime?                       @map("replaced_at") @db.Timestamptz(6)
+  failedOnChainAt          DateTime?                       @map("failed_on_chain_at") @db.Timestamptz(6)
+  failedBeforeBroadcastAt  DateTime?                       @map("failed_before_broadcast_at") @db.Timestamptz(6)
+  reconciliationRequiredAt DateTime?                       @map("reconciliation_required_at") @db.Timestamptz(6)
+  createdAt                DateTime                        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime                        @updatedAt @map("updated_at") @db.Timestamptz(6)
   transitions              WithdrawalTransition[]
   submissionJob            WithdrawalSubmissionJob?
+  webhookEvents            CustodyWebhookInbox[]
+  transactionAttempts      WithdrawalTransactionAttempt[]
+  finalityObservations     WithdrawalFinalityObservation[]
+  finalityJob              WithdrawalFinalityJob?
 
   @@index([assetNetworkId, status])
   @@map("withdrawals")
@@ -650,6 +692,113 @@ model WithdrawalSubmissionJob {
 
   @@index([status, dueAt])
   @@map("withdrawal_submission_jobs")
+}
+
+model CustodyWebhookInbox {
+  id                 String               @id @default(uuid()) @db.Uuid
+  providerEventId    String               @unique @map("provider_event_id") @db.VarChar(150)
+  eventType          String               @map("event_type") @db.VarChar(100)
+  withdrawalId       String?              @map("withdrawal_id") @db.Uuid
+  withdrawal         Withdrawal?          @relation(fields: [withdrawalId], references: [id], onDelete: Restrict)
+  rawBody            Bytes                @map("raw_body")
+  payloadSha256      String               @map("payload_sha256") @db.Char(64)
+  signatureKeyId     String               @map("signature_key_id") @db.VarChar(150)
+  signatureAlgorithm String               @default("RS512") @map("signature_algorithm") @db.VarChar(20)
+  status             CustodyWebhookStatus @default(VERIFIED_PENDING)
+  receivedAt         DateTime             @map("received_at") @db.Timestamptz(6)
+  leaseToken         String?              @map("lease_token") @db.Uuid
+  leaseExpiresAt     DateTime?            @map("lease_expires_at") @db.Timestamptz(6)
+  attemptCount       Int                  @default(0) @map("attempt_count")
+  lastErrorCode      String?              @map("last_error_code") @db.VarChar(100)
+  processedAt        DateTime?            @map("processed_at") @db.Timestamptz(6)
+  createdAt          DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([status, receivedAt])
+  @@index([withdrawalId, receivedAt])
+  @@map("custody_webhook_inbox")
+}
+
+model WithdrawalTransactionAttempt {
+  id                 String                             @id @default(uuid()) @db.Uuid
+  withdrawalId       String                             @map("withdrawal_id") @db.Uuid
+  withdrawal         Withdrawal                         @relation(fields: [withdrawalId], references: [id], onDelete: Restrict)
+  attemptNumber      Int                                @map("attempt_number")
+  externalTxId       String                             @unique @map("external_tx_id") @db.VarChar(150)
+  providerTransferId String?                            @unique @map("provider_transfer_id") @db.VarChar(150)
+  requestHash        String                             @map("request_hash") @db.Char(64)
+  status             WithdrawalTransactionAttemptStatus @default(SUBMITTED)
+  isCurrent          Boolean                            @default(true) @map("is_current")
+  replacementOfId    String?                            @map("replacement_of_id") @db.Uuid
+  replacementOf      WithdrawalTransactionAttempt?      @relation("WithdrawalAttemptReplacement", fields: [replacementOfId], references: [id], onDelete: Restrict)
+  replacements       WithdrawalTransactionAttempt[]     @relation("WithdrawalAttemptReplacement")
+  submittedAt        DateTime                           @map("submitted_at") @db.Timestamptz(6)
+  createdAt          DateTime                           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime                           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  hashes             WithdrawalTransactionHash[]
+  observations       WithdrawalFinalityObservation[]
+
+  @@unique([withdrawalId, attemptNumber])
+  @@index([withdrawalId, status])
+  @@map("withdrawal_transaction_attempts")
+}
+
+model WithdrawalTransactionHash {
+  id         String                       @id @default(uuid()) @db.Uuid
+  attemptId  String                       @map("attempt_id") @db.Uuid
+  attempt    WithdrawalTransactionAttempt @relation(fields: [attemptId], references: [id], onDelete: Restrict)
+  txHash     String                       @map("tx_hash") @db.VarChar(255)
+  observedAt DateTime                     @map("observed_at") @db.Timestamptz(6)
+  createdAt  DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([attemptId, txHash])
+  @@index([txHash])
+  @@map("withdrawal_transaction_hashes")
+}
+
+model WithdrawalFinalityObservation {
+  id                    String                       @id @default(uuid()) @db.Uuid
+  withdrawalId          String                       @map("withdrawal_id") @db.Uuid
+  withdrawal            Withdrawal                   @relation(fields: [withdrawalId], references: [id], onDelete: Restrict)
+  attemptId             String                       @map("attempt_id") @db.Uuid
+  attempt               WithdrawalTransactionAttempt @relation(fields: [attemptId], references: [id], onDelete: Restrict)
+  source                WithdrawalEvidenceSource
+  providerEventId       String?                      @map("provider_event_id") @db.VarChar(150)
+  providerStatus        String?                      @map("provider_status") @db.VarChar(100)
+  txHash                String?                      @map("tx_hash") @db.VarChar(255)
+  blockHash             String?                      @map("block_hash") @db.VarChar(255)
+  blockNumber           BigInt?                      @map("block_number")
+  confirmationCount     Int?                         @map("confirmation_count")
+  executionSucceeded    Boolean?                     @map("execution_succeeded")
+  destinationMatches    Boolean?                     @map("destination_matches")
+  amountMatches         Boolean?                     @map("amount_matches")
+  assetMatches          Boolean?                     @map("asset_matches")
+  networkMatches        Boolean?                     @map("network_matches")
+  normalizedPayloadHash String                       @map("normalized_payload_hash") @db.Char(64)
+  observedAt            DateTime                     @map("observed_at") @db.Timestamptz(6)
+  createdAt             DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([source, normalizedPayloadHash])
+  @@index([withdrawalId, observedAt])
+  @@index([attemptId, observedAt])
+  @@map("withdrawal_finality_observations")
+}
+
+model WithdrawalFinalityJob {
+  id             String                      @id @default(uuid()) @db.Uuid
+  withdrawalId   String                      @unique @map("withdrawal_id") @db.Uuid
+  withdrawal     Withdrawal                  @relation(fields: [withdrawalId], references: [id], onDelete: Restrict)
+  status         WithdrawalFinalityJobStatus @default(PENDING)
+  dueAt          DateTime                    @map("due_at") @db.Timestamptz(6)
+  leaseToken     String?                     @map("lease_token") @db.Uuid
+  leaseExpiresAt DateTime?                   @map("lease_expires_at") @db.Timestamptz(6)
+  attemptCount   Int                         @default(0) @map("attempt_count")
+  lastErrorCode  String?                     @map("last_error_code") @db.VarChar(100)
+  createdAt      DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime                    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([status, dueAt])
+  @@map("withdrawal_finality_jobs")
 }
 
 model Market {

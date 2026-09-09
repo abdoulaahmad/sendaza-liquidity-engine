@@ -14,6 +14,8 @@ This index identifies the canonical decisions for the Sendaza-only, free-first M
 7. The free MVP cannot hold real customer funds or mainnet keys.
 8. SLE owns configurable crypto/fiat pricing routes, spreads, purchase fees, executable quotes, treasury reservations, MPC custody, and withdrawals.
 9. Assets, fiat currencies, networks, markets, and providers remain configuration-driven; ETH and NGN are examples, not hardcoded scope.
+10. Withdrawal confirmation uses durable Fireblocks webhook/poll evidence plus independent network evidence when the bound wallet requires verification.
+11. Provider completion is not blockchain confirmation; mismatches and uncertain post-submission failures enter reconciliation.
 
 ## Canonical Documents
 

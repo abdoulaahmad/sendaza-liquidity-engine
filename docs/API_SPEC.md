@@ -240,7 +240,41 @@ irreversible. A successful cancellation returns the immutable `CANCELLED`
 state and an `sle.withdrawal.cancelled` event that tells Sendaza releasing its
 lock is safe.
 
-## 5. Sendaza Liability Snapshot API
+## 5. Fireblocks Webhooks V2
+
+### POST /webhooks/fireblocks
+
+This provider callback is public at the network boundary but is not
+unauthenticated. It does not use Sendaza HMAC headers, Idempotency-Key, or
+X-Correlation-Id. It requires Content-Type: application/json and the detached
+RS512 JWS in Fireblocks-Webhook-Signature. SLE verifies the signature over the
+exact raw request bytes using the fixed JWKS endpoint selected by
+SLE_FIREBLOCKS_WEBHOOK_ENVIRONMENT.
+
+The endpoint accepts only transaction.created, transaction.status.updated, and
+transaction.network_records.processing_completed. A valid payload requires the
+Webhooks V2 id, eventType, and data.id fields. The body is bounded to 100,000
+bytes. Invalid signatures, algorithms, key IDs, content types, bodies, or event
+shapes are rejected before financial persistence.
+
+A verified event is stored before the endpoint returns 202. provider event ID is
+unique; byte-identical redelivery returns 202 with duplicate true. Reuse of the
+same event ID with a different payload hash fails and is treated as an incident.
+The inbox links directly when data.id matches a known immutable transaction
+attempt. A replacement event may instead link through replacedTxHash, but it
+cannot displace the current attempt unless the replacement provider ID,
+external transaction ID, new hash, and original hash all agree.
+
+A leased worker processes the durable inbox with FOR UPDATE SKIP LOCKED. The
+same finality repository handles webhook and polling evidence, appends the
+observation and hash history, and commits any withdrawal transition together
+with its Sendaza outbox event. Missing webhooks are recovered by polling
+Fireblocks by provider transaction ID. Provider COMPLETED is only CONFIRMING
+when the wallet requires independent verification. CONFIRMED requires a
+network adapter to match successful execution, network, asset, destination,
+exact atomic amount, and the configured confirmation threshold.
+
+## 6. Sendaza Liability Snapshot API
 
 ### `POST /reconciliation/liability-snapshots`
 
@@ -256,7 +290,7 @@ Sendaza periodically supplies ledger-derived liabilities, signed independently f
 }
 ```
 
-## 6. Webhooks From SLE to Sendaza
+## 7. Webhooks From SLE to Sendaza
 
 Endpoint owned by Sendaza:
 
@@ -315,7 +349,10 @@ sle.withdrawal.rejected
 sle.withdrawal.cancelled
 sle.withdrawal.submitted
 sle.withdrawal.broadcasted
+sle.withdrawal.replaced
 sle.withdrawal.confirmed
+sle.withdrawal.failed_on_chain
+sle.withdrawal.post_finality_conflict
 sle.withdrawal.failed_before_broadcast
 sle.withdrawal.reconciliation_required
 sle.liquidity.warning

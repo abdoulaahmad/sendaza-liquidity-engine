@@ -13,3 +13,5 @@ export * from './prisma-purchase.repository';
 export * from './prisma-network-fee.repository';
 export * from './prisma-network-fee-refresh-job.repository';
 export * from './prisma-withdrawal.repository';
+export * from './prisma-custody-webhook-inbox.repository';
+export * from './prisma-withdrawal-finality.repository';

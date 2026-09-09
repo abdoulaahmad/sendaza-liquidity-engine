@@ -7,6 +7,8 @@ import {
   WithdrawalService,
   WithdrawalSubmissionBatchService,
   WithdrawalSubmissionJobRepository,
+  isWithdrawalFinalityTerminal,
+  isWithdrawalTransitionAllowed,
 } from './withdrawal';
 
 describe('WithdrawalService', () => {
@@ -262,5 +264,38 @@ describe('WithdrawalRecoveryBatchService', () => {
       now,
     );
     expect(result.stillUnknown).toBe(1);
+  });
+});
+
+describe('Sprint 9 withdrawal finality transitions', () => {
+  it.each([
+    ['SUBMITTED', 'BROADCASTED'],
+    ['SUBMITTED', 'CONFIRMING'],
+    ['BROADCASTED', 'CONFIRMING'],
+    ['CONFIRMING', 'CONFIRMED'],
+    ['CONFIRMING', 'REPLACED'],
+    ['REPLACED', 'CONFIRMING'],
+    ['REPLACED', 'FAILED_ON_CHAIN'],
+  ] as const)('allows the forward transition %s -> %s', (from, to) => {
+    expect(isWithdrawalTransitionAllowed(from, to)).toBe(true);
+  });
+
+  it.each([
+    ['CONFIRMED', 'CONFIRMING'],
+    ['FAILED_ON_CHAIN', 'SUBMITTED'],
+    ['BROADCASTED', 'SUBMITTED'],
+    ['RECONCILIATION_REQUIRED', 'CONFIRMED'],
+  ] as const)('rejects regression or mutation %s -> %s', (from, to) => {
+    expect(isWithdrawalTransitionAllowed(from, to)).toBe(false);
+  });
+
+  it('keeps post-submission work active until evidence reaches a terminal state', () => {
+    expect(isWithdrawalFinalityTerminal('SUBMITTED')).toBe(false);
+    expect(isWithdrawalFinalityTerminal('BROADCASTED')).toBe(false);
+    expect(isWithdrawalFinalityTerminal('CONFIRMING')).toBe(false);
+    expect(isWithdrawalFinalityTerminal('REPLACED')).toBe(false);
+    expect(isWithdrawalFinalityTerminal('CONFIRMED')).toBe(true);
+    expect(isWithdrawalFinalityTerminal('FAILED_ON_CHAIN')).toBe(true);
+    expect(isWithdrawalFinalityTerminal('RECONCILIATION_REQUIRED')).toBe(true);
   });
 });

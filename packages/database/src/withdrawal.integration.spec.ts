@@ -4,6 +4,7 @@ import {
   PrismaWithdrawalSubmissionJobRepository,
 } from './prisma-withdrawal.repository';
 import { PrismaService } from './prisma.service';
+import { PrismaWithdrawalFinalityRepository } from './prisma-withdrawal-finality.repository';
 
 describe('withdrawal PostgreSQL integration', () => {
   const prisma = new PrismaService();
@@ -11,6 +12,8 @@ describe('withdrawal PostgreSQL integration', () => {
   const withdrawals = new PrismaWithdrawalRepository(prisma);
   const jobs = new PrismaWithdrawalSubmissionJobRepository(prisma);
   const secondJobs = new PrismaWithdrawalSubmissionJobRepository(secondPrisma);
+  const finality = new PrismaWithdrawalFinalityRepository(prisma);
+  const secondFinality = new PrismaWithdrawalFinalityRepository(secondPrisma);
   const suffix = randomUUID().replaceAll('-', '').slice(0, 12).toUpperCase();
   const ids = {
     nativeAsset: randomUUID(),
@@ -58,6 +61,31 @@ describe('withdrawal PostgreSQL integration', () => {
     });
   }
 
+  async function createSubmittedWithdrawal(reference: string, now: Date) {
+    const quote = await createFeeQuote();
+    const created = await withdrawals.create({
+      feeQuoteId: quote.id,
+      customerReference: 'customer-' + suffix,
+      clientLockReference: 'lock-' + reference + '-' + suffix,
+      clientReference: 'withdrawal-' + reference + '-' + suffix,
+      destinationAddress: quote.destinationAddress,
+      correlationId: randomUUID(),
+      createdAt: now,
+    });
+    if (created.kind !== 'SUCCESS') throw new Error('expected withdrawal creation');
+    const claims = await jobs.claimBatch({
+      limit: 100,
+      leaseSeconds: 30,
+      leaseToken: randomUUID(),
+      now,
+    });
+    const claim = claims.find((value) => value.withdrawalId === created.value.id);
+    if (!claim) throw new Error('expected submission claim');
+    await jobs.beginSubmitting(claim, randomUUID(), now);
+    const providerTransferId = randomUUID();
+    await jobs.recordOutcome(claim, { kind: 'SUBMITTED', providerTransferId }, randomUUID(), now);
+    return { withdrawal: created.value, providerTransferId };
+  }
   beforeAll(async () => {
     await Promise.all([prisma.$connect(), secondPrisma.$connect()]);
     const configuration = await prisma.configurationVersion.create({
@@ -489,5 +517,206 @@ describe('withdrawal PostgreSQL integration', () => {
       providerVaultId: 'vault-' + suffix,
       providerAssetId: 'TOKEN_TEST_' + suffix,
     });
+  });
+
+  it('leases finality work once and requires independent chain evidence', async () => {
+    const now = new Date('2026-09-03T10:00:00.000Z');
+    const submitted = await createSubmittedWithdrawal('finality', now);
+    const [first, second] = await Promise.all([
+      finality.claimPollingBatch({ limit: 10, leaseSeconds: 30, leaseToken: randomUUID(), now }),
+      secondFinality.claimPollingBatch({
+        limit: 10,
+        leaseSeconds: 30,
+        leaseToken: randomUUID(),
+        now,
+      }),
+    ]);
+    const claims = [...first, ...second].filter(
+      (value) => value.withdrawalId === submitted.withdrawal.id,
+    );
+    expect(claims).toHaveLength(1);
+    const claim = claims[0];
+    if (!claim) throw new Error('expected finality claim');
+    const confirming = await finality.applyPollingEvidence(
+      claim,
+      {
+        source: 'FIREBLOCKS_POLL',
+        providerStatus: 'COMPLETED',
+        providerTransferId: submitted.providerTransferId,
+        txHash: '0x' + 'a'.repeat(64),
+        observedAt: now,
+      },
+      randomUUID(),
+      now,
+      new Date(now.getTime() + 15_000),
+    );
+    expect(confirming.status).toBe('CONFIRMING');
+    const confirmed = await finality.applyChainEvidence(
+      submitted.withdrawal.id,
+      {
+        source: 'CHAIN_RPC',
+        txHash: '0x' + 'a'.repeat(64),
+        blockHash: '0x' + 'b'.repeat(64),
+        blockNumber: 100n,
+        confirmationCount: 1,
+        executionSucceeded: true,
+        destinationMatches: true,
+        amountMatches: true,
+        assetMatches: true,
+        networkMatches: true,
+        observedAt: now,
+      },
+      randomUUID(),
+      now,
+    );
+    expect(confirmed.status).toBe('CONFIRMED');
+    await expect(
+      prisma.withdrawalFinalityJob.findUniqueOrThrow({
+        where: { withdrawalId: submitted.withdrawal.id },
+      }),
+    ).resolves.toMatchObject({ status: 'COMPLETED' });
+    await expect(
+      prisma.outboxEvent.count({
+        where: { aggregateId: submitted.withdrawal.id, eventType: 'sle.withdrawal.confirmed' },
+      }),
+    ).resolves.toBe(1);
+  });
+
+  it('routes mismatched independent evidence to reconciliation', async () => {
+    const now = new Date('2026-09-03T10:05:00.000Z');
+    const submitted = await createSubmittedWithdrawal('mismatch', now);
+    const claims = await finality.claimPollingBatch({
+      limit: 100,
+      leaseSeconds: 30,
+      leaseToken: randomUUID(),
+      now,
+    });
+    const claim = claims.find((value) => value.withdrawalId === submitted.withdrawal.id);
+    if (!claim) throw new Error('expected finality claim');
+    await finality.applyPollingEvidence(
+      claim,
+      {
+        source: 'FIREBLOCKS_POLL',
+        providerStatus: 'CONFIRMING',
+        txHash: '0x' + 'c'.repeat(64),
+        observedAt: now,
+      },
+      randomUUID(),
+      now,
+      new Date(now.getTime() + 15_000),
+    );
+    const result = await finality.applyChainEvidence(
+      submitted.withdrawal.id,
+      {
+        source: 'CHAIN_RPC',
+        txHash: '0x' + 'c'.repeat(64),
+        blockHash: '0x' + 'd'.repeat(64),
+        blockNumber: 101n,
+        confirmationCount: 2,
+        executionSucceeded: true,
+        destinationMatches: false,
+        amountMatches: true,
+        assetMatches: true,
+        networkMatches: true,
+        observedAt: now,
+      },
+      randomUUID(),
+      now,
+    );
+    expect(result.status).toBe('RECONCILIATION_REQUIRED');
+  });
+
+  it('preserves the original attempt and links an EVM replacement', async () => {
+    const now = new Date('2026-09-03T10:10:00.000Z');
+    const submitted = await createSubmittedWithdrawal('replacement', now);
+    const pollClaims = await finality.claimPollingBatch({
+      limit: 100,
+      leaseSeconds: 30,
+      leaseToken: randomUUID(),
+      now,
+    });
+    const pollClaim = pollClaims.find((value) => value.withdrawalId === submitted.withdrawal.id);
+    if (!pollClaim) throw new Error('expected finality claim');
+    const oldHash = '0x' + 'e'.repeat(64);
+    await finality.applyPollingEvidence(
+      pollClaim,
+      {
+        source: 'FIREBLOCKS_POLL',
+        providerStatus: 'BROADCASTING',
+        txHash: oldHash,
+        observedAt: now,
+      },
+      randomUUID(),
+      now,
+      new Date(now.getTime() + 15_000),
+    );
+
+    const providerEventId = randomUUID();
+    const providerTransferId = randomUUID();
+    const externalTxId = randomUUID();
+    const newHash = '0x' + 'f'.repeat(64);
+    const rawBody = Buffer.from(
+      JSON.stringify({
+        id: providerEventId,
+        eventType: 'transaction.status.updated',
+        data: {
+          id: providerTransferId,
+          externalTxId,
+          status: 'CONFIRMING',
+          txHash: newHash,
+          replacedTxHash: oldHash,
+        },
+      }),
+    );
+    await prisma.custodyWebhookInbox.create({
+      data: {
+        providerEventId,
+        eventType: 'transaction.status.updated',
+        rawBody,
+        payloadSha256: '1'.repeat(64),
+        signatureKeyId: 'integration-key',
+        receivedAt: now,
+      },
+    });
+    const webhookClaims = await finality.claimWebhookBatch({
+      limit: 100,
+      leaseSeconds: 30,
+      leaseToken: randomUUID(),
+      now,
+    });
+    const webhookClaim = webhookClaims.find((value) => value.providerEventId === providerEventId);
+    if (!webhookClaim) throw new Error('expected webhook claim');
+    const result = await finality.applyWebhookEvidence(
+      webhookClaim,
+      {
+        source: 'FIREBLOCKS_WEBHOOK',
+        providerEventId,
+        providerStatus: 'CONFIRMING',
+        providerTransferId,
+        externalTxId,
+        txHash: newHash,
+        replacedTxHash: oldHash,
+        observedAt: now,
+      },
+      randomUUID(),
+      now,
+    );
+    expect(result?.status).toBe('REPLACED');
+    const attempts = await prisma.withdrawalTransactionAttempt.findMany({
+      where: { withdrawalId: submitted.withdrawal.id },
+      orderBy: { attemptNumber: 'asc' },
+      include: { hashes: true },
+    });
+    expect(attempts).toHaveLength(2);
+    expect(attempts[0]).toMatchObject({ isCurrent: false, status: 'REPLACED' });
+    expect(attempts[1]).toMatchObject({
+      isCurrent: true,
+      replacementOfId: attempts[0]?.id,
+      providerTransferId,
+      externalTxId,
+      status: 'SUBMITTED',
+    });
+    expect(attempts[0]?.hashes.map((value) => value.txHash)).toContain(oldHash);
+    expect(attempts[1]?.hashes.map((value) => value.txHash)).toContain(newHash);
   });
 });

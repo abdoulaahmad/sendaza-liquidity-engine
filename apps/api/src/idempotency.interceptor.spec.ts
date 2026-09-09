@@ -11,6 +11,7 @@ describe('IdempotencyInterceptor', () => {
   const repository: IdempotencyRepository = { acquire, complete };
   const handler = () => undefined;
   const reflector = {
+    getAllAndOverride: jest.fn(() => false),
     get: jest.fn((key: string) => (key === IDEMPOTENT_OPERATION ? 'purchases.create' : undefined)),
   } as unknown as Reflector;
   const interceptor = new IdempotencyInterceptor(reflector, repository);
@@ -35,6 +36,7 @@ describe('IdempotencyInterceptor', () => {
     return {
       switchToHttp: () => ({ getRequest: () => request, getResponse: () => response }),
       getHandler: () => handler,
+      getClass: () => class TestController {},
     } as unknown as ExecutionContext;
   }
 
@@ -93,6 +95,18 @@ describe('IdempotencyInterceptor', () => {
     ).rejects.toMatchObject({
       response: { error: { code: 'IDEMPOTENCY_OPERATION_NOT_CONFIGURED' } },
     });
+    expect(acquire).not.toHaveBeenCalled();
+  });
+
+  it('bypasses Sendaza idempotency only for provider webhook routes', async () => {
+    (reflector.getAllAndOverride as jest.Mock).mockReturnValue(true);
+    const next = { handle: jest.fn(() => of({ accepted: true })) };
+    const stream = await interceptor.intercept(
+      context({ headers: {}, authentication: undefined }),
+      next,
+    );
+    await expect(firstValueFrom(stream)).resolves.toEqual({ accepted: true });
+    expect(next.handle).toHaveBeenCalledTimes(1);
     expect(acquire).not.toHaveBeenCalled();
   });
 

@@ -1,3 +1,4 @@
+
 # Sprint Learning Reports
 
 These reports explain each SLE sprint in language suitable for a junior
@@ -12,6 +13,8 @@ developer while preserving honest delivery status and links to the wider system.
 | 4 | `SPRINT_04_REPORT.html` | `SPRINT_04_REPORT.pdf` | Delivered |
 | 5 | `SPRINT_05_REPORT.html` | `SPRINT_05_REPORT.pdf` | Delivered; live sandbox demo externally pending |
 | 6 | `SPRINT_06_REPORT.html` | `SPRINT_06_REPORT.pdf` | In progress |
+| 7 | `SPRINT_07_REPORT.html` | `SPRINT_07_REPORT.pdf` | Delivered |
+| 9 | `SPRINT_09_REPORT.html` | `SPRINT_09_REPORT.pdf` | Implementation delivered; environment gate pending |
 
 The HTML file is the editable source. Regenerate its matching PDF after every
 material report change. A report supplements, but never replaces, canonical

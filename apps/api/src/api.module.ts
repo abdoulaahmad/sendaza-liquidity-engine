@@ -63,7 +63,12 @@ import { FireblocksWebhookVerifier } from './fireblocks-webhook.verifier';
       inject: [WithdrawalRepository],
     },
     FireblocksWebhookConfiguration,
-    FireblocksWebhookVerifier,
+    {
+      provide: FireblocksWebhookVerifier,
+      useFactory: (configuration: FireblocksWebhookConfiguration) =>
+        new FireblocksWebhookVerifier(configuration),
+      inject: [FireblocksWebhookConfiguration],
+    },
     {
       provide: CustodyWebhookIngestionService,
       useFactory: (

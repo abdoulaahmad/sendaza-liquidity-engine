@@ -23,9 +23,11 @@ import {
   WithdrawalRepository,
   WithdrawalSubmissionJobRepository,
   CustodyWebhookInboxRepository,
+  WithdrawalFinalityRepository,
 } from '../../domain/src';
 import { PrismaIdempotencyRepository } from './prisma-idempotency.repository';
 import { PrismaCustodyWebhookInboxRepository } from './prisma-custody-webhook-inbox.repository';
+import { PrismaWithdrawalFinalityRepository } from './prisma-withdrawal-finality.repository';
 import { PrismaAuditRepository } from './prisma-audit.repository';
 import { PrismaOutboxRepository } from './prisma-outbox.repository';
 import { PrismaPricingRepository } from './prisma-pricing.repository';
@@ -67,6 +69,7 @@ import {
     PrismaWithdrawalRepository,
     PrismaWithdrawalSubmissionJobRepository,
     PrismaCustodyWebhookInboxRepository,
+    PrismaWithdrawalFinalityRepository,
     { provide: AuthenticationNonceRepository, useExisting: PrismaAuthenticationNonceRepository },
     { provide: CredentialMetadataRepository, useExisting: PrismaCredentialMetadataRepository },
     { provide: IdempotencyRepository, useExisting: PrismaIdempotencyRepository },
@@ -89,6 +92,7 @@ import {
       useExisting: PrismaWithdrawalSubmissionJobRepository,
     },
     { provide: CustodyWebhookInboxRepository, useExisting: PrismaCustodyWebhookInboxRepository },
+    { provide: WithdrawalFinalityRepository, useExisting: PrismaWithdrawalFinalityRepository },
     {
       provide: PricingRefreshJobRepository,
       useExisting: PrismaPricingRefreshJobRepository,
@@ -113,6 +117,7 @@ import {
     WithdrawalRepository,
     WithdrawalSubmissionJobRepository,
     CustodyWebhookInboxRepository,
+    WithdrawalFinalityRepository,
   ],
 })
 export class DatabaseModule {}

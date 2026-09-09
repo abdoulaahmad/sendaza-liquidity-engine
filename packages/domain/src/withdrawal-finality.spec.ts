@@ -1,4 +1,4 @@
-﻿import {
+import {
   CustodyFinalityProvider,
   CustodyWebhookEventNormalizer,
   WithdrawalFinalityRepository,
@@ -96,6 +96,11 @@ describe('withdrawal finality orchestration', () => {
       withdrawalId: 'withdrawal-1',
       providerTransferId: 'transfer-1',
       leaseToken: 'lease-1',
+      verificationRequired: false,
+      networkCode: 'SEPOLIA',
+      addressFamily: 'EVM',
+      destinationAddress: '0x1111111111111111111111111111111111111111',
+      principalAtomic: 1n,
     };
     const evidence = {
       source: 'FIREBLOCKS_POLL' as const,
@@ -113,9 +118,11 @@ describe('withdrawal finality orchestration', () => {
       retryPolling: jest.fn(),
     } as unknown as WithdrawalFinalityRepository;
     const provider = { getTransfer: jest.fn().mockResolvedValue(evidence) };
+    const chains = { observe: jest.fn() };
     const service = new WithdrawalPollingFinalityBatchService(
       repository,
       provider as CustodyFinalityProvider,
+      chains,
       10,
       30,
       15,

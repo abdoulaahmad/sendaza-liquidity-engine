@@ -1,4 +1,4 @@
-﻿import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { WithdrawalStatus } from './withdrawal';
 
@@ -8,14 +8,58 @@ export interface WithdrawalFinalityEvidence {
   readonly source: WithdrawalEvidenceSource;
   readonly providerEventId?: string;
   readonly providerStatus?: string;
+  readonly providerTransferId?: string;
+  readonly externalTxId?: string;
+  readonly replacedTxHash?: string;
   readonly txHash?: string;
   readonly blockHash?: string;
   readonly blockNumber?: bigint;
   readonly confirmationCount?: number;
   readonly executionSucceeded?: boolean;
+  readonly destinationMatches?: boolean;
+  readonly amountMatches?: boolean;
+  readonly assetMatches?: boolean;
+  readonly networkMatches?: boolean;
   readonly observedAt: Date;
 }
 
+export function nextWithdrawalFinalityStatus(
+  current: WithdrawalStatus,
+  evidence: WithdrawalFinalityEvidence,
+  verificationRequired: boolean,
+  requiredConfirmations: number,
+): WithdrawalStatus {
+  if (evidence.source === 'CHAIN_RPC') {
+    const mismatch = [
+      evidence.destinationMatches,
+      evidence.amountMatches,
+      evidence.assetMatches,
+      evidence.networkMatches,
+    ].some((matches) => matches === false);
+    if (mismatch) return 'RECONCILIATION_REQUIRED';
+    if (evidence.executionSucceeded === false) return 'FAILED_ON_CHAIN';
+    const completelyMatched =
+      evidence.executionSucceeded === true &&
+      evidence.destinationMatches === true &&
+      evidence.amountMatches === true &&
+      evidence.assetMatches === true &&
+      evidence.networkMatches === true;
+    if (completelyMatched && (evidence.confirmationCount ?? 0) >= requiredConfirmations) {
+      return 'CONFIRMED';
+    }
+    return evidence.txHash ? 'CONFIRMING' : current;
+  }
+  const status = evidence.providerStatus?.toUpperCase();
+  if (status === 'COMPLETED') return verificationRequired ? 'CONFIRMING' : 'CONFIRMED';
+  if (status === 'CONFIRMING') return 'CONFIRMING';
+  if ((status === 'BROADCASTING' || status === 'BROADCASTED') && evidence.txHash) {
+    return 'BROADCASTED';
+  }
+  if (status && ['FAILED', 'REJECTED', 'CANCELLED', 'BLOCKED'].includes(status)) {
+    return 'RECONCILIATION_REQUIRED';
+  }
+  return current;
+}
 export interface CustodyWebhookClaim {
   readonly inboxId: string;
   readonly providerEventId: string;
@@ -28,6 +72,12 @@ export interface WithdrawalFinalityClaim {
   readonly withdrawalId: string;
   readonly providerTransferId: string;
   readonly leaseToken: string;
+  readonly verificationRequired: boolean;
+  readonly networkCode: string;
+  readonly addressFamily: string;
+  readonly destinationAddress: string;
+  readonly principalAtomic: bigint;
+  readonly contractAddress?: string;
 }
 
 export interface WithdrawalFinalityApplication {
@@ -64,6 +114,13 @@ export abstract class WithdrawalFinalityRepository {
     now: Date,
     nextPollAt: Date,
   ): Promise<WithdrawalFinalityApplication>;
+  abstract applyChainEvidence(
+    withdrawalId: string,
+    evidence: WithdrawalFinalityEvidence,
+    correlationId: string,
+    now: Date,
+  ): Promise<WithdrawalFinalityApplication>;
+
   abstract retryPolling(
     claim: WithdrawalFinalityClaim,
     errorCode: string,
@@ -76,6 +133,12 @@ export abstract class CustodyWebhookEventNormalizer {
   abstract normalize(claim: CustodyWebhookClaim): WithdrawalFinalityEvidence;
 }
 
+export abstract class ChainFinalityProvider {
+  abstract observe(
+    claim: WithdrawalFinalityClaim,
+    txHash: string,
+  ): Promise<WithdrawalFinalityEvidence>;
+}
 export abstract class CustodyFinalityProvider {
   abstract getTransfer(providerTransferId: string): Promise<WithdrawalFinalityEvidence | null>;
 }
@@ -130,6 +193,7 @@ export class WithdrawalPollingFinalityBatchService {
   constructor(
     private readonly repository: WithdrawalFinalityRepository,
     private readonly provider: CustodyFinalityProvider,
+    private readonly chains: ChainFinalityProvider,
     private readonly batchSize: number,
     private readonly leaseSeconds: number,
     private readonly pollIntervalSeconds: number,
@@ -153,9 +217,11 @@ export class WithdrawalPollingFinalityBatchService {
     let retried = 0;
     const nextPollAt = new Date(now.getTime() + this.pollIntervalSeconds * 1000);
     for (const claim of claims) {
+      let providerEvidence: WithdrawalFinalityEvidence | null;
+      let chainEvidence: WithdrawalFinalityEvidence | undefined;
       try {
-        const evidence = await this.provider.getTransfer(claim.providerTransferId);
-        if (!evidence) {
+        providerEvidence = await this.provider.getTransfer(claim.providerTransferId);
+        if (!providerEvidence) {
           await this.repository.retryPolling(
             claim,
             'FIREBLOCKS_TRANSFER_NOT_FOUND',
@@ -165,12 +231,31 @@ export class WithdrawalPollingFinalityBatchService {
           retried += 1;
           continue;
         }
-        await this.repository.applyPollingEvidence(claim, evidence, randomUUID(), now, nextPollAt);
-        observed += 1;
+        if (claim.verificationRequired && providerEvidence.txHash) {
+          chainEvidence = await this.chains.observe(claim, providerEvidence.txHash);
+        }
       } catch (error: unknown) {
         await this.repository.retryPolling(claim, finalityErrorCode(error), nextPollAt, now);
         retried += 1;
+        continue;
       }
+
+      await this.repository.applyPollingEvidence(
+        claim,
+        providerEvidence,
+        randomUUID(),
+        now,
+        nextPollAt,
+      );
+      if (chainEvidence) {
+        await this.repository.applyChainEvidence(
+          claim.withdrawalId,
+          chainEvidence,
+          randomUUID(),
+          now,
+        );
+      }
+      observed += 1;
     }
     return { claimed: claims.length, observed, retried };
   }
@@ -181,11 +266,18 @@ export function withdrawalFinalityEvidenceHash(evidence: WithdrawalFinalityEvide
     source: evidence.source,
     providerEventId: evidence.providerEventId ?? null,
     providerStatus: evidence.providerStatus ?? null,
+    providerTransferId: evidence.providerTransferId ?? null,
+    externalTxId: evidence.externalTxId ?? null,
+    replacedTxHash: evidence.replacedTxHash ?? null,
     txHash: evidence.txHash ?? null,
     blockHash: evidence.blockHash ?? null,
     blockNumber: evidence.blockNumber?.toString() ?? null,
     confirmationCount: evidence.confirmationCount ?? null,
     executionSucceeded: evidence.executionSucceeded ?? null,
+    destinationMatches: evidence.destinationMatches ?? null,
+    amountMatches: evidence.amountMatches ?? null,
+    assetMatches: evidence.assetMatches ?? null,
+    networkMatches: evidence.networkMatches ?? null,
     observedAt: evidence.observedAt.toISOString(),
   });
   return createHash('sha256').update(canonical).digest('hex');

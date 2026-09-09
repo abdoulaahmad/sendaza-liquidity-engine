@@ -51,8 +51,17 @@ import { FireblocksWebhookVerifier } from './fireblocks-webhook.verifier';
       inject: [QuoteRepository],
     },
     PurchaseConfiguration,
-    WithdrawalFeeQuoteService,
-    WithdrawalService,
+    {
+      provide: WithdrawalFeeQuoteService,
+      useFactory: (repository: NetworkFeeRepository) =>
+        new WithdrawalFeeQuoteService(repository),
+      inject: [NetworkFeeRepository],
+    },
+    {
+      provide: WithdrawalService,
+      useFactory: (repository: WithdrawalRepository) => new WithdrawalService(repository),
+      inject: [WithdrawalRepository],
+    },
     FireblocksWebhookConfiguration,
     FireblocksWebhookVerifier,
     {

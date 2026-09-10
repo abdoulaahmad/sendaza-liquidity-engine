@@ -3,7 +3,7 @@
 **Audience:** Sendaza engineering, architecture, security, finance, and operations
 
 **Purpose:** Explain what SLE owns, what is delivered, and what Sendaza must change for integration
-**Status date:** 1 September 2026
+**Status date:** 10 September 2026
 
 ## 1. Executive Summary
 
@@ -34,10 +34,11 @@ database transaction between Sendaza and SLE.
 | Exact amounts and configurable asset, fiat, network, asset-network, and market registries | Delivered |
 | Sendaza service authentication, replay protection, idempotency, audit, and durable outbox | Delivered |
 | Provider observations, multi-leg pricing routes, safety guards, durable refresh worker, reference snapshots | Delivered |
-| Executable purchase quotes, spreads, fees, limits, and quote endpoint | Sprint 4, not implemented |
+| Executable purchase quotes, spreads, fees, limits, and quote endpoint | Delivered |
 | Fireblocks wallet and treasury synchronization | Sprint 5 delivered; sandbox activation and funded-wallet demo require deployment credentials |
-| Purchase reservation and ledger-settlement handshake | Sprint 6, not implemented |
-| Network fee quotes and external withdrawals | Sprints 7 to 9, not implemented |
+| Purchase reservation and ledger-settlement handshake | Delivered; joint Sendaza ledger integration remains |
+| Cached network-fee quotes and withdrawal creation/submission | Delivered; sandbox provider activation remains |
+| Fireblocks webhook ingestion, polling recovery, replacement evidence, and blockchain finality | Delivered; sandbox end-to-end validation remains |
 | Reconciliation and production hardening | Later sprints |
 
 Production pricing is intentionally inactive. No enabled pricing route, refresh
@@ -167,7 +168,7 @@ customer locked account, and moves the exact quoted crypto from treasury control
 to the customer available account. Final account orientation follows the
 approved Sendaza chart of accounts.
 
-## 6. Withdrawal Flow to Implement Later
+## 6. Withdrawal Flow to Implement
 
 Sendaza requests a fee quote for an explicit asset and network, shows principal,
 network fee, service fee, recipient amount, total debit, and expiry, then locks
@@ -195,7 +196,159 @@ raw signing keys or seed phrases.
 - Separate sandbox and production identities, databases, custody workspaces, and
   webhook secrets.
 
-## 8. Work Sendaza Can Start Now
+## 8. Required Sendaza Integration Components
+
+### 8.1 Private SLE API client
+
+Build a server-side client inside Sendaza Core. Customer applications must call
+Sendaza Core and must never receive SLE credentials.
+
+For every protected SLE request, Sendaza supplies:
+
+```text
+X-SLE-Key-Id
+X-SLE-Timestamp
+X-SLE-Nonce
+X-SLE-Signature
+X-Correlation-Id
+Idempotency-Key        # required for mutations
+```
+
+The signing value is UTF-8 text containing exactly these five fields separated
+by newline characters, with no final newline:
+
+```text
+UPPERCASE_HTTP_METHOD
+RAW_REQUEST_TARGET_INCLUDING_QUERY
+RFC3339_UTC_TIMESTAMP
+NONCE
+LOWERCASE_SHA256_HEX_OF_EXACT_RAW_BODY
+```
+
+Sign that value with HMAC-SHA256 using the Sendaza-to-SLE shared secret and
+encode the signature as unpadded base64url. Generate a new URL-safe nonce for
+every attempt. When retrying a financial mutation after a timeout, send the
+identical request body with the same `Idempotency-Key`; use a new nonce and
+timestamp because request authentication and financial idempotency are separate.
+
+### 8.2 Durable SLE webhook receiver
+
+Sendaza must expose this production HTTPS endpoint, or an agreed equivalent:
+
+```text
+POST /api/v1/integrations/sle/webhooks
+```
+
+The HTTP handler must capture the exact raw request bytes before JSON parsing.
+For each request:
+
+1. Read `X-SLE-Event-Id`, `X-SLE-Timestamp`, `X-SLE-Signature`, and
+   `X-Correlation-Id`.
+2. Reject timestamps outside the agreed replay window.
+3. Calculate HMAC-SHA256 over `timestamp + . + exact_raw_body` using the
+   SLE-to-Sendaza webhook secret.
+4. Encode the result as unpadded base64url and compare it in constant time.
+5. Validate the body and require the header event ID to match `body.eventId`.
+6. In one Sendaza PostgreSQL transaction, insert the event into a durable inbox
+   with a unique event-ID constraint.
+7. Return `2xx` only after that transaction commits.
+8. Return `2xx` for an already stored event ID without posting ledger effects
+   again. Process accepted events asynchronously from the inbox.
+
+The receiver must tolerate duplicates, delays, and reordering. A signature-valid
+event is evidence to store and process; it is not permission to bypass Sendaza's
+state machine or post an unbalanced journal.
+
+### 8.3 Sendaza ledger orchestration
+
+Implement journal-backed available/locked balance operations and durable command
+outboxes for purchases and withdrawals. Each Sendaza transaction must atomically
+write the ledger journal, local intent state, and command/event outbox record.
+
+- A quote only describes economics; it does not lock money or reserve crypto.
+- Sendaza locks the exact quoted debit before requesting a purchase or withdrawal.
+- Sendaza keeps the lock after timeouts, provider uncertainty, or broadcast.
+- Sendaza unlocks automatically only after proven pre-broadcast failure or a
+  cancellation that SLE explicitly confirms as safe.
+- Confirmation events settle through one balanced, idempotent journal group.
+- Corrections use linked compensating entries; completed history is not edited.
+
+### 8.4 Reconciliation support
+
+Sendaza must produce ledger-derived customer liability snapshots at an agreed
+UTC cutoff and retain the identifiers required to trace every workflow across
+Sendaza, SLE, Fireblocks, and the blockchain. Mismatches must enter an operations
+queue and may activate a scoped circuit breaker; neither system silently creates
+balancing entries.
+
+## 9. Shared Configuration And Secret Exchange
+
+Sendaza and the SLE operator must agree on two independent HMAC secret sets.
+Using different secrets limits the impact and simplifies rotation.
+
+### Sendaza-to-SLE API credential
+
+The SLE operator configures this value on the Railway `api` service:
+
+```text
+SLE_SENDAZA_CREDENTIALS_JSON=
+[
+  {
+    keyId: sendaza-production-1,
+    secret: <at-least-32-random-bytes>
+  }
+]
+```
+
+Sendaza stores the matching key ID and secret in its production secret manager.
+SLE accepts one or two entries to permit overlap during rotation. Key IDs contain
+only letters, digits, `_`, or `-` and are at most 100 characters.
+
+### SLE-to-Sendaza webhook configuration
+
+Sendaza engineering supplies the deployed receiver URL. The SLE operator sets
+these values on the Railway `worker` service:
+
+```text
+SLE_SENDAZA_WEBHOOK_URL=https://<sendaza-api-host>/api/v1/integrations/sle/webhooks
+SLE_SENDAZA_WEBHOOK_SECRET=<at-least-32-random-bytes>
+```
+
+Sendaza stores the same webhook secret in its production secret manager. The
+production URL must use HTTPS and cannot contain embedded credentials or a URL
+fragment. Exchange secrets through an approved encrypted secret-sharing channel,
+never GitHub, tickets, email, ordinary chat, logs, or a committed `.env` file.
+
+The Fireblocks API key/private authentication key and blockchain RPC URLs belong
+only to SLE. Sendaza does not need or receive custody credentials, treasury keys,
+seed phrases, or signing material.
+
+## 10. End-To-End Example
+
+```text
+Customer             Sendaza Core             SLE               Fireblocks/chain
+   |                       |                    |                        |
+   | request withdrawal    |                    |                        |
+   |---------------------->| fee quote          |                        |
+   |                       |------------------->|                        |
+   | display exact quote   |<-------------------|                        |
+   | authorize             |                    |                        |
+   |---------------------->| lock total debit   |                        |
+   |                       | create withdrawal  |                        |
+   |                       |------------------->| policy + durable job   |
+   |                       |<-------------------|                        |
+   |                       |                    | MPC submission         |
+   |                       |                    |----------------------->|
+   |                       | signed events      | webhook/poll/finality  |
+   |                       |<-------------------|<-----------------------|
+   |                       | settle journal only after confirmed evidence|
+```
+
+If any network call times out, the initiating system queries by its stored SLE
+or client reference. It does not create a second command with a new idempotency
+key and does not assume the transfer failed.
+
+## 11. Work Sendaza Can Start Now
 
 1. Approve the precision and atomic-unit migration design.
 2. Define the crypto chart of accounts and balanced journal templates.
@@ -207,12 +360,11 @@ raw signing keys or seed phrases.
 8. Build ledger-derived liability snapshot generation.
 9. Create restart, timeout, duplicate, reordering, and conservation tests.
 
-Do not integrate a live `/quotes`, `/purchases`, or `/withdrawals` workflow until
-the corresponding SLE sprint is delivered and its machine-readable contract is
-reviewed. The examples in `API_SPEC.md` are target contracts, not proof that all
-endpoints currently exist.
+Review the machine-readable contract and exercise `/quotes`, `/purchases`, and
+`/withdrawals` only in the isolated sandbox until the joint acceptance gate is
+passed. Mainnet and real customer funds remain prohibited.
 
-## 9. Joint Decisions Before Integration
+## 12. Joint Decisions Before Integration
 
 - Final service authentication and key-rotation ceremony
 - Exact amount, fee, and rounding display policy
@@ -224,7 +376,7 @@ endpoints currently exist.
 - Sandbox test assets, networks, markets, limits, and seed balances
 - Recovery objectives, alert routing, incident ownership, and audit retention
 
-## 10. Joint Acceptance Gate
+## 13. Joint Acceptance Gate
 
 - No customer frontend calls SLE or contains an SLE credential.
 - Excess precision is rejected end to end and all monetary JSON values are strings.
@@ -235,10 +387,31 @@ endpoints currently exist.
 - Ambiguous purchase or withdrawal outcomes remain locked.
 - Purchase and withdrawal conservation tests pass with real PostgreSQL.
 - Reconciliation links Sendaza liabilities to SLE and custody evidence at one cutoff.
+- API requests with invalid signatures, stale timestamps, or replayed nonces fail.
+- Webhook requests with invalid signatures or stale timestamps fail without being stored.
+- A duplicate webhook returns `2xx` but cannot create a duplicate journal group.
+- Lost webhook delivery is recovered through retries and state queries.
 - Mainnet and real funds remain blocked until security, compliance, treasury,
   custody, redundant pricing, backup, monitoring, and recovery gates are approved.
 
-## 11. Canonical References
+## 14. Information Sendaza Must Return To The SLE Team
+
+Before the joint sandbox test, Sendaza engineering provides:
+
+```text
+1. Sandbox and production webhook URLs
+2. Named technical owner and incident contact
+3. Confirmation that raw-body capture occurs before JSON parsing
+4. Confirmation of durable event-ID deduplication
+5. Confirmation of atomic lock + intent + outbox transactions
+6. Approved ledger precision and journal templates
+7. Supported asset/network identifiers for the first sandbox route
+8. Secret-exchange and credential-rotation procedure
+9. Expected request rate, timeout budget, and maintenance windows
+10. Evidence from duplicate, timeout, replay, and reordered-event tests
+```
+
+## 15. Canonical References
 
 - `CURRENT_BASELINE.md` and `DESIGN_DECISIONS.md`
 - `ARCHITECTURE.md`

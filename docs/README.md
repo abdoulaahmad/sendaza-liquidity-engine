@@ -29,6 +29,7 @@ All customer identity, KYC, authentication, fiat funding, internal balances, and
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | Service boundaries, components, state machines, and data model |
 | [API_SPEC.md](./API_SPEC.md) | Sendaza-to-SLE REST and webhook contracts |
 | [LEDGER_INTEGRATION.md](./LEDGER_INTEGRATION.md) | Sendaza accounting entries and cross-service settlement protocol |
+| [SENDAZA_ENGINEERING_HANDOFF.md](./SENDAZA_ENGINEERING_HANDOFF.md) | Implementation responsibilities, credentials, webhook receiver, and joint acceptance checklist for the Sendaza team |
 | [SECURITY_OPERATIONS.md](./SECURITY_OPERATIONS.md) | Security controls, treasury operations, reconciliation, and incidents |
 | [ROADMAP.md](./ROADMAP.md) | Phased implementation and launch gates |
 | [METHODOLOGY.md](./METHODOLOGY.md) | Modular Agile delivery, GitHub workflow, definitions, and safety gates |

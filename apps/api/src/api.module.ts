@@ -45,12 +45,30 @@ import { FireblocksWebhookVerifier } from './fireblocks-webhook.verifier';
   ],
   providers: [
     RegistryService,
-    QuoteService,
+    {
+      provide: QuoteService,
+      useFactory: (repository: QuoteRepository) => new QuoteService(repository),
+      inject: [QuoteRepository],
+    },
     PurchaseConfiguration,
-    WithdrawalFeeQuoteService,
-    WithdrawalService,
+    {
+      provide: WithdrawalFeeQuoteService,
+      useFactory: (repository: NetworkFeeRepository) =>
+        new WithdrawalFeeQuoteService(repository),
+      inject: [NetworkFeeRepository],
+    },
+    {
+      provide: WithdrawalService,
+      useFactory: (repository: WithdrawalRepository) => new WithdrawalService(repository),
+      inject: [WithdrawalRepository],
+    },
     FireblocksWebhookConfiguration,
-    FireblocksWebhookVerifier,
+    {
+      provide: FireblocksWebhookVerifier,
+      useFactory: (configuration: FireblocksWebhookConfiguration) =>
+        new FireblocksWebhookVerifier(configuration),
+      inject: [FireblocksWebhookConfiguration],
+    },
     {
       provide: CustodyWebhookIngestionService,
       useFactory: (
@@ -70,7 +88,7 @@ import { FireblocksWebhookVerifier } from './fireblocks-webhook.verifier';
         new PurchaseService(repository, configuration.reservationTtlSeconds),
       inject: [PurchaseRepository, PurchaseConfiguration],
     },
-    CredentialSecretProvider,
+    { provide: CredentialSecretProvider, useFactory: () => new CredentialSecretProvider() },
     { provide: APP_GUARD, useClass: AuthenticationGuard },
     { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
     { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },

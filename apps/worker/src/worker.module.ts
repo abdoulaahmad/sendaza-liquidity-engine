@@ -93,7 +93,7 @@ import { WithdrawalFinalityWorker } from './withdrawal-finality.worker';
       useFactory: (configuration: PricingRefreshConfiguration) =>
         new CoinbasePriceProvider(
           fetch,
-          'https://api.coinbase.com/api/v3/brokerage/market/products',
+          configuration.coinbaseBaseUrl,
           configuration.providerTimeoutMs,
         ),
       inject: [PricingRefreshConfiguration],

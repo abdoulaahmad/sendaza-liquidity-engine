@@ -60,6 +60,11 @@ Provider adapters return decimal strings. Vendor response types and SDKs stay
 inside adapters. Domain and application services never depend on Coinbase or
 another vendor type.
 
+The Coinbase public adapter uses the fixed official HTTPS product endpoint from
+`SLE_COINBASE_BASE_URL`. Configuration rejects non-HTTPS URLs, other hosts,
+query strings, fragments, and paths outside the public product endpoint. The
+adapter does not require or accept a Coinbase trading credential.
+
 ## Data Model
 
 ### `pricing_providers`

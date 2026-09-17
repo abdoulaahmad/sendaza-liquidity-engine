@@ -24,6 +24,7 @@ import {
   WithdrawalSubmissionJobRepository,
   CustodyWebhookInboxRepository,
   WithdrawalFinalityRepository,
+  RegistryRepository,
 } from '../../domain/src';
 import { PrismaIdempotencyRepository } from './prisma-idempotency.repository';
 import { PrismaCustodyWebhookInboxRepository } from './prisma-custody-webhook-inbox.repository';
@@ -70,6 +71,7 @@ import {
     PrismaWithdrawalSubmissionJobRepository,
     PrismaCustodyWebhookInboxRepository,
     PrismaWithdrawalFinalityRepository,
+    { provide: RegistryRepository, useExisting: PrismaRegistryRepository },
     { provide: AuthenticationNonceRepository, useExisting: PrismaAuthenticationNonceRepository },
     { provide: CredentialMetadataRepository, useExisting: PrismaCredentialMetadataRepository },
     { provide: IdempotencyRepository, useExisting: PrismaIdempotencyRepository },
@@ -100,6 +102,7 @@ import {
   ],
   exports: [
     PrismaRegistryRepository,
+    RegistryRepository,
     AuthenticationNonceRepository,
     CredentialMetadataRepository,
     IdempotencyRepository,

@@ -337,10 +337,9 @@ export class PrismaWithdrawalFinalityRepository implements WithdrawalFinalityRep
       }
     }
 
-    let duplicateEvidence = false;
-    try {
-      await tx.withdrawalFinalityObservation.create({
-        data: {
+    const observation = await tx.withdrawalFinalityObservation.createMany({
+      data: [
+        {
           withdrawalId,
           attemptId: attempt.id,
           source: evidence.source,
@@ -358,11 +357,10 @@ export class PrismaWithdrawalFinalityRepository implements WithdrawalFinalityRep
           normalizedPayloadHash: withdrawalFinalityEvidenceHash(evidence),
           observedAt: evidence.observedAt,
         },
-      });
-    } catch (error: unknown) {
-      if (!isUnique(error)) throw error;
-      duplicateEvidence = true;
-    }
+      ],
+      skipDuplicates: true,
+    });
+    const duplicateEvidence = observation.count === 0;
     if (evidence.txHash)
       await tx.withdrawalTransactionHash.upsert({
         where: { attemptId_txHash: { attemptId: attempt.id, txHash: evidence.txHash } },
@@ -476,7 +474,4 @@ function safeCode(code: string): string {
 }
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-function isUnique(error: unknown): boolean {
-  return record(error) && error.code === 'P2002';
 }

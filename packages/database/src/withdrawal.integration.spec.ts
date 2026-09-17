@@ -33,6 +33,7 @@ describe('withdrawal PostgreSQL integration', () => {
   async function createFeeQuote(
     overrides: {
       destinationAddress?: string;
+      createdAt?: Date;
       expiresAt?: Date;
       principalAtomic?: bigint;
     } = {},
@@ -55,14 +56,59 @@ describe('withdrawal PostgreSQL integration', () => {
         recipientAmountAtomic: 25_000_000n,
         assetDecimals: 6,
         nativeFeeAssetDecimals: 8,
-        createdAt: new Date('2026-09-03T07:30:00.000Z'),
+        createdAt: overrides.createdAt ?? new Date('2026-09-03T07:30:00.000Z'),
         expiresAt: overrides.expiresAt ?? new Date('2026-09-03T09:00:00.000Z'),
       },
     });
   }
 
   async function createSubmittedWithdrawal(reference: string, now: Date) {
-    const quote = await createFeeQuote();
+    await prisma.treasurySnapshot.createMany({
+      data: [
+        {
+          treasuryWalletId: ids.treasuryWallet,
+          assetNetworkId: ids.assetNetwork,
+          controlledAtomic: 1_000_000_000n,
+          providerAvailableAtomic: 1_000_000_000n,
+          pendingAtomic: 0n,
+          frozenAtomic: 0n,
+          lockedAtomic: 0n,
+          chainConfirmedAtomic: 1_000_000_000n,
+          reservedAtomic: 0n,
+          allocatedAtomic: 0n,
+          safetyBufferAtomic: 0n,
+          gasReserveAtomic: 0n,
+          unavailableAtomic: 0n,
+          sellableAtomic: 1_000_000_000n,
+          verificationStatus: 'MATCHED',
+          observedAt: now,
+          expiresAt: new Date(now.getTime() + 3_600_000),
+        },
+        {
+          treasuryWalletId: ids.gasWallet,
+          assetNetworkId: ids.nativeAssetNetwork,
+          controlledAtomic: 1_000_000n,
+          providerAvailableAtomic: 1_000_000n,
+          pendingAtomic: 0n,
+          frozenAtomic: 0n,
+          lockedAtomic: 0n,
+          chainConfirmedAtomic: 1_000_000n,
+          reservedAtomic: 0n,
+          allocatedAtomic: 0n,
+          safetyBufferAtomic: 0n,
+          gasReserveAtomic: 1_000n,
+          unavailableAtomic: 0n,
+          sellableAtomic: 999_000n,
+          verificationStatus: 'MATCHED',
+          observedAt: now,
+          expiresAt: new Date(now.getTime() + 3_600_000),
+        },
+      ],
+    });
+    const quote = await createFeeQuote({
+      createdAt: now,
+      expiresAt: new Date(now.getTime() + 60_000),
+    });
     const created = await withdrawals.create({
       feeQuoteId: quote.id,
       customerReference: 'customer-' + suffix,
@@ -72,7 +118,9 @@ describe('withdrawal PostgreSQL integration', () => {
       correlationId: randomUUID(),
       createdAt: now,
     });
-    if (created.kind !== 'SUCCESS') throw new Error('expected withdrawal creation');
+    if (created.kind !== 'SUCCESS') {
+      throw new Error(`expected withdrawal creation, received ${created.code}`);
+    }
     const claims = await jobs.claimBatch({
       limit: 100,
       leaseSeconds: 30,
@@ -637,7 +685,7 @@ describe('withdrawal PostgreSQL integration', () => {
     });
     const pollClaim = pollClaims.find((value) => value.withdrawalId === submitted.withdrawal.id);
     if (!pollClaim) throw new Error('expected finality claim');
-    const oldHash = '0x' + 'e'.repeat(64);
+    const oldHash = '0x' + suffix.toLowerCase().padEnd(64, 'e');
     await finality.applyPollingEvidence(
       pollClaim,
       {
@@ -654,7 +702,7 @@ describe('withdrawal PostgreSQL integration', () => {
     const providerEventId = randomUUID();
     const providerTransferId = randomUUID();
     const externalTxId = randomUUID();
-    const newHash = '0x' + 'f'.repeat(64);
+    const newHash = '0x' + suffix.toLowerCase().padEnd(64, 'f');
     const rawBody = Buffer.from(
       JSON.stringify({
         id: providerEventId,

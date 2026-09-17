@@ -12,7 +12,10 @@ describe('PricingRefreshConfiguration', () => {
     process.env.SLE_PRICING_BATCH_SIZE = '20';
     process.env.SLE_PRICING_LEASE_SECONDS = '45';
     process.env.SLE_PRICE_PROVIDER_TIMEOUT_MS = '2500';
+    process.env.SLE_COINBASE_BASE_URL =
+      'https://api.coinbase.com/api/v3/brokerage/market/products/';
     expect(new PricingRefreshConfiguration()).toEqual({
+      coinbaseBaseUrl: 'https://api.coinbase.com/api/v3/brokerage/market/products',
       pollIntervalMs: 500,
       batchSize: 20,
       leaseSeconds: 45,
@@ -28,5 +31,15 @@ describe('PricingRefreshConfiguration', () => {
   ])('rejects invalid %s', (name, value) => {
     process.env[name] = value;
     expect(() => new PricingRefreshConfiguration()).toThrow(name);
+  });
+
+  it.each([
+    'http://api.coinbase.com/api/v3/brokerage/market/products',
+    'https://example.com/api/v3/brokerage/market/products',
+    'https://api.coinbase.com/api/v3/brokerage/market/products/USDT-USD',
+    'https://api.coinbase.com/api/v3/brokerage/market/products?redirect=true',
+  ])('rejects an unsafe Coinbase base URL: %s', (value) => {
+    process.env.SLE_COINBASE_BASE_URL = value;
+    expect(() => new PricingRefreshConfiguration()).toThrow('SLE_COINBASE_BASE_URL_INVALID');
   });
 });

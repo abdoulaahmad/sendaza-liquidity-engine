@@ -60,6 +60,31 @@ Provider adapters return decimal strings. Vendor response types and SDKs stay
 inside adapters. Domain and application services never depend on Coinbase or
 another vendor type.
 
+The Coinbase public adapter uses the fixed official HTTPS product endpoint from
+`SLE_COINBASE_BASE_URL`. Configuration rejects non-HTTPS URLs, other hosts,
+query strings, fragments, and paths outside the public product endpoint. The
+adapter does not require or accept a Coinbase trading credential.
+
+### USDT-bridge activation
+
+`scripts/configure-production-pricing.ts` installs versioned Coinbase routes for
+`ETH/NGN`, `SOL/NGN`, and `USDT/NGN`. ETH and SOL use their Coinbase USDT pairs;
+all three routes then use `USDT-USD` and the reviewed manual `USD-NGN` version.
+The utility requires an actor and reason, creates a new configuration version,
+and schedules refresh jobs. It does not create or change quote policies, spreads,
+or fees.
+
+Run it only after reviewing the environment values:
+
+```text
+node --env-file=.env -r ts-node/register scripts/configure-production-pricing.ts
+```
+
+Activation is not connectivity evidence. The worker must subsequently store
+fresh observations for every leg and an accepted snapshot before quotes can use
+the route. Missing Coinbase products, stale manual rates, excessive route
+deviation, or a USDT depeg outside tolerance fail closed.
+
 ## Data Model
 
 ### `pricing_providers`
